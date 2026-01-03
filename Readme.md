@@ -2,6 +2,8 @@
 
 A specialized fork of [Distant Horizons](https://gitlab.com/jeseibel/distant-horizons) optimized for **Forge 1.20.1**.
 
+Developed for the **Au Naturel Modpack**.
+
 ## About This Fork
 
 This fork removes multi-loader and multi-version support to focus exclusively on Forge 1.20.1, resulting in a simplified and optimized codebase for specific modpack use.
@@ -24,7 +26,7 @@ This fork removes multi-loader and multi-version support to focus exclusively on
 
 - **Minecraft:** 1.20.1
 - **Mod Loader:** Forge 47.2.1
-- **Java:** 17+
+- **Java:** 25 (targeted), 17+ (minimum)
 
 ## Building
 
