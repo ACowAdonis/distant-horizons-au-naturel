@@ -43,6 +43,8 @@ import com.seibel.distanthorizons.core.logging.DhLogger;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Handles converting {@link FullDataSourceV2}'s to {@link ColumnRenderSource}.
@@ -55,8 +57,9 @@ public class FullDataToRenderDataTransformer
 	
 	private static final LongOpenHashSet BROKEN_POS_SET = new LongOpenHashSet();
 	private static final PhantomArrayListPool ARRAY_LIST_POOL = new PhantomArrayListPool("Data Transformer");
-	
-	private static HashSet<IBlockStateWrapper> snowLayerBlockStates = null;
+
+	/** Cache of snow layer block states per level wrapper to avoid expensive deserialization */
+	private static final ConcurrentHashMap<IClientLevelWrapper, Set<IBlockStateWrapper>> SNOW_LAYER_CACHE = new ConcurrentHashMap<>();
 	
 	
 	
@@ -195,16 +198,19 @@ public class FullDataToRenderDataTransformer
 		
 		HashSet<IBlockStateWrapper> blockStatesToIgnore = WRAPPER_FACTORY.getRendererIgnoredBlocks(levelWrapper);
 		HashSet<IBlockStateWrapper> caveBlockStatesToIgnore = WRAPPER_FACTORY.getRendererIgnoredCaveBlocks(levelWrapper);
-		
-		// build snow block cache if needed
-		if (snowLayerBlockStates == null)
+
+		// Get or create level-specific snow layer cache (avoids repeated expensive deserialization)
+		Set<IBlockStateWrapper> snowLayerBlockStates = SNOW_LAYER_CACHE.computeIfAbsent(levelWrapper, level ->
 		{
-			snowLayerBlockStates = new HashSet<>();
-			// ignore snow layers 1-3, everything above should be considered a full block
-			snowLayerBlockStates.add(WRAPPER_FACTORY.deserializeBlockStateWrapperOrGetDefault("minecraft:snow_STATE_{layers:1}", levelWrapper));
-			snowLayerBlockStates.add(WRAPPER_FACTORY.deserializeBlockStateWrapperOrGetDefault("minecraft:snow_STATE_{layers:2}", levelWrapper));
-			snowLayerBlockStates.add(WRAPPER_FACTORY.deserializeBlockStateWrapperOrGetDefault("minecraft:snow_STATE_{layers:3}", levelWrapper));
-		}
+			HashSet<IBlockStateWrapper> set = new HashSet<>();
+			// Ignore snow layers 1-3, everything above should be considered a full block
+			for (int layers = 1; layers <= 3; layers++)
+			{
+				set.add(WRAPPER_FACTORY.deserializeBlockStateWrapperOrGetDefault(
+					"minecraft:snow_STATE_{layers:" + layers + "}", level));
+			}
+			return set;
+		});
 		
 		int caveCullingMaxY = Config.Client.Advanced.Graphics.Culling.caveCullingHeight.get() - levelWrapper.getMinHeight();
 		boolean caveCullingEnabled = 
