@@ -414,6 +414,110 @@ boolean caveBlock = caveBlockIds.contains(blockId);
 
 ---
 
+### Priority 2.4: ChunkWrapper Height Map Optimization ⭐⭐⭐⭐
+**Difficulty:** Medium
+**Risk:** Low
+**Impact:** Medium
+**Estimated Speedup:** 2-3× for height map creation (1% of server tick overhead)
+**Dependencies:** None
+**Profile Evidence:** Spark profile shows ~1.08% of server tick time in createDhHeightMaps()
+
+**File:** `common/src/main/java/com/seibel/distanthorizons/common/wrappers/chunk/ChunkWrapper.java`
+**Lines:** 204-264
+
+**Current Code:**
+```java
+for (int x = 0; x < LodUtil.CHUNK_WIDTH; x++)
+{
+    for (int z = 0; z < LodUtil.CHUNK_WIDTH; z++)
+    {
+        int y = this.getMaxNonEmptyHeight();
+        blockPos.set(x, y, z);
+        IBlockStateWrapper block = BlockStateWrapper.fromBlockState(
+            this.chunk.getBlockState(blockPos), this.wrappedLevel);
+
+        while (y > minInclusiveBuildHeight && ...)
+        {
+            // Check isSolid() and getOpacity()
+
+            y--;
+            blockPos.setY(y);
+            // Creates new wrapper on every iteration
+            block = BlockStateWrapper.fromBlockState(
+                this.chunk.getBlockState(blockPos), this.wrappedLevel);
+        }
+    }
+}
+```
+
+**Issues:**
+1. **No wrapper reuse** - line 257 doesn't use the guess-based caching (line 132 of BlockStateWrapper has a version that accepts previous block as hint)
+2. **Repeated HashMap lookups** - Each fromBlockState() call hits WRAPPER_BY_BLOCK_STATE cache
+3. **Random Y access overhead** - BlockPos.setY() and coordinate calculations on every iteration
+4. **Wrapper allocation pressure** - Even with caching, hash lookups are expensive
+
+**Optimization Options:**
+
+**Option A: Use Guess-Based Wrapper (Quick Win)**
+```java
+// Line 257 - use the guess parameter to improve cache hit rate
+block = BlockStateWrapper.fromBlockState(
+    this.chunk.getBlockState(blockPos), this.wrappedLevel, block);  // Add 'block' as guess
+```
+Expected speedup: 1.5-2× (adjacent Y levels often have same block)
+
+**Option B: Section-Level Iteration (Best Performance)**
+```java
+// Iterate through chunk sections directly instead of random access
+LevelChunkSection[] sections = this.chunk.getSections();
+for (int sectionIndex = sections.length - 1; sectionIndex >= 0; sectionIndex--)
+{
+    LevelChunkSection section = sections[sectionIndex];
+    if (section.hasOnlyAir()) continue; // Skip empty sections
+
+    // Direct palette access avoids repeated coordinate calculations
+    for (int localY = 15; localY >= 0; localY--)
+    {
+        for (int x = 0; x < 16; x++)
+        {
+            for (int z = 0; z < 16; z++)
+            {
+                // section.getBlockState() is faster than chunk.getBlockState()
+                BlockState state = section.getBlockState(x, localY, z);
+                // Check properties directly without wrapper if possible
+                if (solidHeight[x][z] == minHeight && state.isSolidRender(...))
+                    solidHeight[x][z] = sectionY + localY;
+                if (lightHeight[x][z] == minHeight && state.getLightBlock(...) > 0)
+                    lightHeight[x][z] = sectionY + localY;
+            }
+        }
+    }
+}
+```
+Expected speedup: 2-3× (eliminates wrapper overhead, better cache locality)
+
+**Option C: Hybrid Approach**
+- Use Option A for minimal changes (5 minutes)
+- Implement Option B if profiling shows it's still a bottleneck
+
+**Why This Tenth:**
+- Validated by real profiling data (1.08% of server ticks)
+- Called on every chunk load/save (frequent)
+- Medium complexity but low risk (isolated code)
+- Different code path from LOD generation (chunk interception phase)
+- Natural fit for Tier 2 (medium effort, proven impact)
+
+**Testing:**
+- Verify height maps match vanilla behavior
+- Test with extreme worlds (superflat, amplified, custom dimensions)
+- Profile before/after to confirm speedup
+- Check with modded blocks that have custom height properties
+
+**Implementation Recommendation:**
+Start with Option A (guess-based wrapper) as it's a one-line change with immediate 1.5-2× gain. If profiling shows it's still significant, implement Option B for full optimization.
+
+---
+
 ## Tier 3: Marginal Improvements
 
 ### Priority 3.1: Better ArrayList Sizing ⭐⭐
