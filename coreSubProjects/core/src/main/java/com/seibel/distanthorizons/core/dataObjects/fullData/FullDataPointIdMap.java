@@ -67,16 +67,24 @@ public class FullDataPointIdMap
 	/** The index should be the same as the BlockBiomeWrapperPair's ID */
 	private final ArrayList<BlockBiomeWrapperPair> blockBiomePairList = new ArrayList<>();
 	private final ConcurrentHashMap<BlockBiomeWrapperPair, Integer> idMap = new ConcurrentHashMap<>();
-	
+
 	private int cachedHashCode = 0;
+	private boolean useIncrementalHash = false;
 	
 	
-	
+
+
 	//=============//
 	// constructor //
 	//=============//
-	
-	public FullDataPointIdMap(long pos) { this.pos = pos; }
+
+	public FullDataPointIdMap(long pos)
+	{
+		this.pos = pos;
+		// Initialize hash with position hash to enable incremental updates
+		this.cachedHashCode = DhSectionPos.hashCode(pos);
+		this.useIncrementalHash = true;
+	}
 	
 	
 	
@@ -132,8 +140,8 @@ public class FullDataPointIdMap
 			int newId = this.blockBiomePairList.size();
 			this.blockBiomePairList.add(newPair);
 
-			// invalidate the cached hash code
-			this.cachedHashCode = 0;
+			// Update hash incrementally instead of invalidating (avoids O(n) recalculation)
+			this.cachedHashCode = 31 * this.cachedHashCode + newPair.hashCode();
 
 			return newId;
 		});
@@ -163,9 +171,9 @@ public class FullDataPointIdMap
 		int id = this.blockBiomePairList.size();
 		this.blockBiomePairList.add(pair);
 		this.idMap.put(pair, id);
-		
-		// invalidate the cached hash code
-		this.cachedHashCode = 0;
+
+		// Update hash incrementally instead of invalidating (avoids O(n) recalculation)
+		this.cachedHashCode = 31 * this.cachedHashCode + pair.hashCode();
 	}
 	
 	/**
@@ -197,7 +205,9 @@ public class FullDataPointIdMap
 		this.pos = pos;
 		this.blockBiomePairList.clear();
 		this.idMap.clear();
-		this.cachedHashCode = 0;
+		// Reinitialize hash with position hash to enable incremental updates
+		this.cachedHashCode = DhSectionPos.hashCode(pos);
+		this.useIncrementalHash = true;
 	}
 	
 	
@@ -280,7 +290,11 @@ public class FullDataPointIdMap
 			// if the mappings are out of sync then the LODs will render incorrectly due to IDs being wrong
 			LodUtil.assertNotReach("ID maps failed to deserialize for pos: ["+ DhSectionPos.toString(pos)+"], incorrect entity count. Expected count ["+entityCount+"], actual count ["+newMap.size()+"]");
 		}
-		
+
+		// After deserialization, recalculate hash since items were added directly to list
+		newMap.generateHashCode();
+		newMap.useIncrementalHash = true;
+
 		return newMap;
 	}
 	
@@ -308,7 +322,8 @@ public class FullDataPointIdMap
 	@Override
 	public int hashCode()
 	{
-		if (this.cachedHashCode == 0)
+		// Only regenerate if not using incremental hash updates
+		if (!this.useIncrementalHash && this.cachedHashCode == 0)
 		{
 			this.generateHashCode();
 		}
@@ -319,7 +334,8 @@ public class FullDataPointIdMap
 		int result = DhSectionPos.hashCode(this.pos);
 		for (int i = 0; i < this.blockBiomePairList.size(); i++)
 		{
-			result = 31 * result + this.blockBiomePairList.hashCode();
+			// Fixed bug: use hash of individual element, not the ArrayList itself
+			result = 31 * result + this.blockBiomePairList.get(i).hashCode();
 		}
 		this.cachedHashCode = result;
 	}
