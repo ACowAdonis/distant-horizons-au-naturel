@@ -45,6 +45,7 @@ import com.seibel.distanthorizons.core.wrapperInterfaces.world.ILevelWrapper;
 import com.seibel.distanthorizons.coreapi.ModInfo;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -672,41 +673,37 @@ public class FullDataSourceV2
 		//========================================//
 		// find all y levels where changes happen //
 		//========================================//
-		
-		IntArrayList yTransitions = new IntArrayList();
+
+		// Use IntOpenHashSet for O(1) lookups instead of O(n) contains() on IntArrayList
+		IntOpenHashSet yTransitionSet = new IntOpenHashSet();
 		for (int i = 0; i < 4; i++)
 		{
-			if (inputColumns[i] == null 
+			if (inputColumns[i] == null
 				|| inputColumns[i].isEmpty())
 			{
 				continue;
 			}
-			
+
 			for (int j = 0; j < inputColumns[i].size(); j++)
 			{
 				long datapoint = inputColumns[i].getLong(j);
 				int minY = FullDataPointUtil.getBottomY(datapoint);
 				int maxY = minY + FullDataPointUtil.getHeight(datapoint);
-				
-				if (!yTransitions.contains(minY))
-				{
-					yTransitions.add(minY);
-				}
-				
-				if (!yTransitions.contains(maxY))
-				{
-					yTransitions.add(maxY);
-				}
+
+				// HashSet.add() is O(1) and automatically handles duplicates
+				yTransitionSet.add(minY);
+				yTransitionSet.add(maxY);
 			}
 		}
-		
+
 		// can happen if the columns are empty
-		if (yTransitions.isEmpty())
+		if (yTransitionSet.isEmpty())
 		{
 			return newColumnList;
 		}
-		
-		// sort the transitions from bottom to top // TODO
+
+		// Convert to sorted IntArrayList for subsequent processing
+		IntArrayList yTransitions = new IntArrayList(yTransitionSet);
 		yTransitions.sort(null);
 		
 		// create index trackers for each column, 
