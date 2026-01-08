@@ -42,6 +42,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 
@@ -88,6 +89,9 @@ public class ClientBlockStateColorCache
 	private int baseColor = 0;
 	private boolean needPostTinting = false;
 	private int tintIndex = 0;
+
+	/** Cache of tinted colors by biome to avoid expensive tinting calculations */
+	private final ConcurrentHashMap<BiomeWrapper, Integer> tintCache = new ConcurrentHashMap<>(16);
 	
 	
 	
@@ -407,11 +411,18 @@ public class ClientBlockStateColorCache
 		{
 			return this.baseColor;
 		}
-		
+
 		// don't try tinting blocks that don't support our method of tint getting
 		if (BROKEN_BLOCK_STATES.contains(this.blockState))
 		{
 			return this.baseColor;
+		}
+
+		// Check cache first - most blocks will have the same tint color for a given biome
+		Integer cachedColor = this.tintCache.get(biomeWrapper);
+		if (cachedColor != null)
+		{
+			return cachedColor;
 		}
 		
 		
@@ -480,17 +491,25 @@ public class ClientBlockStateColorCache
 			}
 		}
 		
-		
-		
+
+
+
+
+		int finalColor;
 		if (tintColor != -1)
 		{
-			return ColorUtil.multiplyARGBwithRGB(this.baseColor, tintColor);
+			finalColor = ColorUtil.multiplyARGBwithRGB(this.baseColor, tintColor);
 		}
 		else
 		{
 			// unable to get the tinted color, use the base color instead
-			return this.baseColor;
+			finalColor = this.baseColor;
 		}
+
+		// Cache the result for this biome to avoid recalculating expensive tints
+		this.tintCache.put(biomeWrapper, finalColor);
+
+		return finalColor;
 	}
 	
 	
