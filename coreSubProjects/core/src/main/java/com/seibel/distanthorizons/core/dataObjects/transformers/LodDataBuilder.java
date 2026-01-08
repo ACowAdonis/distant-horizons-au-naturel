@@ -121,10 +121,13 @@ public class LodDataBuilder
 		{
 			IMutableBlockPosWrapper mcBlockPos = chunkWrapper.getMutableBlockPosWrapper();
 			IBlockStateWrapper previousBlockState = null;
-			
-			DhApiChunkProcessingEvent.EventParam mutableChunkProcessedEventParam 
+
+			DhApiChunkProcessingEvent.EventParam mutableChunkProcessedEventParam
 					= new DhApiChunkProcessingEvent.EventParam(levelWrapper, chunkPosX, chunkPosZ);
-			
+
+			// Check once if there are any API event listeners to avoid expensive event firing when none are registered
+			boolean hasApiListeners = ApiEventInjector.INSTANCE.hasListeners(DhApiChunkProcessingEvent.class);
+
 			int minBuildHeight = chunkWrapper.getMinNonEmptyHeight();
 			int exclusiveMaxBuildHeight = chunkWrapper.getExclusiveMaxBuildHeight();
 			int inclusiveMinBuildHeight = chunkWrapper.getInclusiveMinBuildHeight();
@@ -227,20 +230,21 @@ public class LodDataBuilder
 									&& !currentBlockState.isSolid()
 									&& !currentBlockState.isLiquid()
 									&& currentBlockState.getOpacity() != LodUtil.BLOCK_FULLY_OPAQUE;
-							
-							
+
+
 							// check for API overrides
+							if (hasApiListeners)
 							{
 								mutableChunkProcessedEventParam.updateForPosition(relBlockX, y, relBlockZ, newBlockState, newBiome);
 								ApiEventInjector.INSTANCE.fireAllEvents(DhApiChunkProcessingEvent.class, mutableChunkProcessedEventParam);
-								
+
 								// did the API user override this block?
 								if (mutableChunkProcessedEventParam.getBlockOverride() != null)
 								{
 									// API users shouldn't be creating their own IBlockStateWrapper objects
 									newBlockState = (IBlockStateWrapper)mutableChunkProcessedEventParam.getBlockOverride();
 								}
-								
+
 								// did the API user override this biome?
 								if (mutableChunkProcessedEventParam.getBiomeOverride() != null)
 								{

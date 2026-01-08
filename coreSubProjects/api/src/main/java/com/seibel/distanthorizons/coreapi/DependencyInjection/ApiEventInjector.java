@@ -209,5 +209,17 @@ public class ApiEventInjector extends DependencyInjector<IDhApiEvent> implements
 	{
 		return (event instanceof IDhApiCancelableEvent) ? new DhApiCancelableEventParam<>(parameter) : new DhApiEventParam<>(parameter);
 	}
-	
+
+	/**
+	 * Checks if there are any registered listeners for the given event class.
+	 * @param abstractEventClass the event class to check
+	 * @return true if there are listeners, false otherwise
+	 */
+	public <U extends IDhApiEvent<?>> boolean hasListeners(Class<U> abstractEventClass)
+	{
+		ArrayList<U> eventList = this.getAll(abstractEventClass);
+		// getAll() returns a list with null if no listeners are bound
+		return eventList != null && !eventList.isEmpty() && eventList.get(0) != null;
+	}
+
 }
