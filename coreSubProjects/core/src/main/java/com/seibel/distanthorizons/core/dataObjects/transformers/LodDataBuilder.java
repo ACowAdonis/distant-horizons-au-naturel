@@ -151,16 +151,24 @@ public class LodDataBuilder
 					{
 						longs.clear();
 					}
-					
+
+					// Pre-cache all biomes for this column to avoid repeated JNI calls
+					// Biomes are stored at 4-block (quart) resolution in Minecraft
+					int minQuartY = inclusiveMinBuildHeight >> 2;
+					int maxQuartY = exclusiveMaxBuildHeight >> 2;
+					int quartCount = maxQuartY - minQuartY + 1;
+					IBiomeWrapper[] biomeCache = new IBiomeWrapper[quartCount];
+					for (int quartY = minQuartY; quartY <= maxQuartY; quartY++)
+					{
+						int sampleY = quartY << 2; // Convert quart back to block Y
+						biomeCache[quartY - minQuartY] = chunkWrapper.getBiome(relBlockX, sampleY, relBlockZ);
+					}
+
 					int lastY = exclusiveMaxBuildHeight;
-					IBiomeWrapper currentBiome = chunkWrapper.getBiome(relBlockX, lastY, relBlockZ);
+					int lastQuartY = lastY >> 2;
+					IBiomeWrapper currentBiome = biomeCache[lastQuartY - minQuartY];
 					IBlockStateWrapper currentBlockState = AIR;
 					int mappedId = dataSource.mapping.addIfNotPresentAndGetId(currentBiome, currentBlockState);
-
-					// Biome cache optimization: biomes are stored at 4-block (quart) resolution,
-					// so we only need to lookup when the quart Y changes, not for every Y level.
-					int lastBiomeQuartY = lastY >> 2;
-					IBiomeWrapper cachedBiome = currentBiome;
 
 					// Determine lighting (we are at the height limit. There are no torches here, and sky is not obscured.) // TODO: Per face lighting someday?
 					byte blockLight = LodUtil.MIN_MC_LIGHT;
@@ -203,15 +211,9 @@ public class LodDataBuilder
 					boolean forceSingleBlock = false;
 					for (; y >= minBuildHeight; y--)
 					{
-						// Biome cache optimization: only lookup biome when quart Y changes
+						// Use pre-cached biome from array (eliminates JNI calls)
 						int currentQuartY = y >> 2;
-						IBiomeWrapper newBiome;
-						if (currentQuartY != lastBiomeQuartY)
-						{
-							cachedBiome = chunkWrapper.getBiome(relBlockX, y, relBlockZ);
-							lastBiomeQuartY = currentQuartY;
-						}
-						newBiome = cachedBiome;
+						IBiomeWrapper newBiome = biomeCache[currentQuartY - minQuartY];
 
 						IBlockStateWrapper newBlockState = previousBlockState = chunkWrapper.getBlockState(relBlockX, y, relBlockZ, mcBlockPos, previousBlockState);
 						byte newBlockLight = (byte) chunkWrapper.getDhBlockLight(relBlockX, y + 1, relBlockZ);
