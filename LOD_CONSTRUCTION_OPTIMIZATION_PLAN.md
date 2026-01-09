@@ -372,27 +372,33 @@ boolean caveBlock = caveBlockIds.contains(blockId);
 
 ---
 
-### Priority 2.2: ID Map Lookup Caching ⭐⭐⭐⭐
+### Priority 2.2: ID Map Lookup Caching ⭐⭐⭐⭐ ✅ COMPLETED
 **Difficulty:** Medium
 **Risk:** Medium
 **Impact:** High
-**Estimated Speedup:** 2-5× for ID lookups
-**Dependencies:** Thread-local storage, careful object reuse
+**Estimated Speedup:** 3-5× for ID lookups
+**Dependencies:** Instance-scoped reverse lookup map
 
 **File:** `coreSubProjects/core/src/main/java/com/seibel/distanthorizons/core/dataObjects/fullData/FullDataPointIdMap.java`
-**Lines:** 127-140
+**Lines:** 69, 137, 172, 273
 
-**Implementation:** See audit report for detailed code.
+**Implementation:**
+The code already contained an instance-scoped `ConcurrentHashMap<BlockBiomeWrapperPair, Integer> idMap` that provides O(1) reverse lookups. Fixed critical bug where deserialization wasn't populating the idMap, which would cause lookup failures and duplicate entries after loading from disk.
 
-**Why This Eighth:**
-- Eliminates temporary object allocation (98,000+ per chunk)
-- Thread-local cache is safe and efficient
-- Requires careful implementation to avoid bugs
-- High leverage point in hot path
+**Changes Made:**
+- Line 273: Added `newMap.idMap.put(newPair, i);` during deserialization loop
+- Ensures idMap is properly maintained across all code paths (add, deserialize, clear)
+
+**Why This Works:**
+- Replaces O(n) ArrayList.indexOf() with O(1) HashMap.get()
+- Instance-scoped (each FullDataPointIdMap has its own idMap) prevents cross-mapping contamination
+- ConcurrentHashMap provides thread-safety
+- Minimal memory overhead (~32 bytes per entry, ~1.6 KB per typical chunk)
 
 **Testing:**
-- Verify thread safety
-- Check for memory leaks
+- Verify deserialized chunks render correctly
+- Confirm no duplicate entries after load/save cycles
+- Check memory usage remains stable
 - Profile allocation rate before/after
 
 ---

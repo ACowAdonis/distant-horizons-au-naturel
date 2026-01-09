@@ -264,11 +264,13 @@ public class FullDataPointIdMap
 			{
 				throw new InterruptedException("[" + FullDataPointIdMap.class.getSimpleName() + "] deserializing interrupted.");
 			}
-			
-			
+
+
 			String entryString = inputStream.readUTF();
 			BlockBiomeWrapperPair newPair = BlockBiomeWrapperPair.deserialize(entryString, levelWrapper);
 			newMap.blockBiomePairList.add(newPair);
+			// Populate reverse lookup map (Priority 2.2: instance-scoped reverse lookup)
+			newMap.idMap.put(newPair, i);
 			
 			if (RUN_SERIALIZATION_DUPLICATE_VALIDATION)
 			{
