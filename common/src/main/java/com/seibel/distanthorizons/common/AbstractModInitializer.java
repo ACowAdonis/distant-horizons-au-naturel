@@ -267,38 +267,7 @@ public abstract class AbstractModInitializer
 			
 			LOGGER.warn(startingString + "[WWOO] "+ wwooWarning);
 		}
-		
-		// Chunky
-		boolean chunkyPresent = false;
-		try
-		{
-			Class.forName("org.popcraft.chunky.api.ChunkyAPI");
-			chunkyPresent = true;
-		}
-		catch (ClassNotFoundException ignore) { }
-		
-		if (chunkyPresent)
-		{
-			// Chunky can generate chunks faster than DH can process them,
-			// causing holes in the LODs.
-			// Generally it's better and faster to use DH's world generator.
-			
-			String chunkyWarning = "Chunky can cause DH LODs to have holes " +
-					"since Chunky can generate chunks faster than DH can process them. \n" +
-					"Using DH's distant generator instead of chunky or increasing DH's CPU thread count can resolve the issue.";
-			
-			if (showChatWarnings)
-			{
-				String message =
-						// orange text
-						"\u00A76" + "Distant Horizons: Chunky detected." + "\u00A7r\n" +
-								chunkyWarning;
-				ClientApi.INSTANCE.showChatMessageNextFrame(message);
-			}
-			
-			LOGGER.warn(startingString + "[Chunky] "+ chunkyWarning);
-		}
-		
+
 	}
 	
 	
