@@ -225,7 +225,9 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 			&& this.fullDataSourceProvider.canQueueRetrieval())
 		{
 			this.fullDataRetrievalQueueRunning.set(true);
-			FULL_DATA_RETRIEVAL_QUEUE_THREAD.execute(() -> this.queueFullDataRetrievalTasks(playerPos, this.nodesNeedingRetrieval));
+			// Make defensive copy to prevent concurrent modification when this.nodesNeedingRetrieval is cleared on next tick
+			HashSet<LodRenderSection> retrievalCopy = new HashSet<>(this.nodesNeedingRetrieval);
+			FULL_DATA_RETRIEVAL_QUEUE_THREAD.execute(() -> this.queueFullDataRetrievalTasks(playerPos, retrievalCopy));
 		}
 
 
