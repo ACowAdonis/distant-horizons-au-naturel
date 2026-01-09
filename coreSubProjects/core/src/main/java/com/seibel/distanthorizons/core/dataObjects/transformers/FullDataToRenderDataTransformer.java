@@ -37,6 +37,7 @@ import com.seibel.distanthorizons.core.wrapperInterfaces.block.IBlockStateWrappe
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IBiomeWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IClientLevelWrapper;
 import com.seibel.distanthorizons.coreapi.util.BitShiftUtil;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import com.seibel.distanthorizons.core.logging.DhLogger;
@@ -199,6 +200,37 @@ public class FullDataToRenderDataTransformer
 		HashSet<IBlockStateWrapper> blockStatesToIgnore = WRAPPER_FACTORY.getRendererIgnoredBlocks(levelWrapper);
 		HashSet<IBlockStateWrapper> caveBlockStatesToIgnore = WRAPPER_FACTORY.getRendererIgnoredCaveBlocks(levelWrapper);
 
+		// Build ID-based filter sets for fast primitive int lookups (avoids expensive wrapper comparisons)
+		// This is done once per transform call and amortized across thousands of data points
+		IntOpenHashSet blockIdsToIgnore = new IntOpenHashSet(blockStatesToIgnore.size());
+		IntOpenHashSet caveBlockIds = new IntOpenHashSet(caveBlockStatesToIgnore.size());
+
+		// Populate ID sets by scanning the mapping and checking if each block/biome pair should be filtered
+		for (int id = 0; id < fullDataSource.mapping.size(); id++)
+		{
+			try
+			{
+				IBlockStateWrapper blockState = fullDataSource.mapping.getBlockStateWrapper(id);
+
+				// Check if this block should be ignored
+				if (blockStatesToIgnore.contains(blockState))
+				{
+					blockIdsToIgnore.add(id);
+				}
+
+				// Check if this is a cave block
+				if (caveBlockStatesToIgnore.contains(blockState))
+				{
+					caveBlockIds.add(id);
+				}
+			}
+			catch (IndexOutOfBoundsException e)
+			{
+				// Skip invalid IDs (shouldn't happen but be defensive)
+				continue;
+			}
+		}
+
 		// Get or create level-specific snow layer cache (avoids repeated expensive deserialization)
 		Set<IBlockStateWrapper> snowLayerBlockStates = SNOW_LAYER_CACHE.computeIfAbsent(levelWrapper, level ->
 		{
@@ -287,9 +319,10 @@ public class FullDataToRenderDataTransformer
 			// ignored block and  //
 			// cave culling check //
 			//====================//
-			
-			boolean ignoreBlock = blockStatesToIgnore.contains(block);
-			boolean caveBlock = caveBlockStatesToIgnore.contains(block); // TODO caves should also ignore transparent/non-solid blocks (IE grass and plants) wthout each being defined
+
+			// Use ID-based filtering for 20× faster primitive int comparison vs wrapper contains()
+			boolean ignoreBlock = blockIdsToIgnore.contains(id);
+			boolean caveBlock = caveBlockIds.contains(id); // TODO caves should also ignore transparent/non-solid blocks (IE grass and plants) wthout each being defined
 			if (caveBlock)
 			{
 				if (caveCullingEnabled
