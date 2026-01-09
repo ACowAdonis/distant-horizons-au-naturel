@@ -6,7 +6,6 @@ import com.seibel.distanthorizons.common.wrappers.worldGeneration.params.GlobalW
 import com.seibel.distanthorizons.core.api.internal.ClientApi;
 import com.seibel.distanthorizons.core.api.internal.SharedApi;
 import com.seibel.distanthorizons.core.config.Config;
-import com.seibel.distanthorizons.core.dependencyInjection.ModAccessorInjector;
 import com.seibel.distanthorizons.core.generation.DhLightingEngine;
 import com.seibel.distanthorizons.core.level.IDhServerLevel;
 import com.seibel.distanthorizons.core.logging.DhLogger;
@@ -16,7 +15,6 @@ import com.seibel.distanthorizons.core.util.ExceptionUtil;
 import com.seibel.distanthorizons.core.util.LodUtil;
 import com.seibel.distanthorizons.core.util.TimerUtil;
 import com.seibel.distanthorizons.core.wrapperInterfaces.chunk.IChunkWrapper;
-import com.seibel.distanthorizons.core.wrapperInterfaces.modAccessor.IC2meAccessor;
 import com.seibel.distanthorizons.coreapi.ModInfo;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ServerLevel;
@@ -42,9 +40,7 @@ public class InternalServerGenerator
 			.name("LOD Chunk Loading")
 			.fileLevelConfig(Config.Common.Logging.logWorldGenChunkLoadEventToFile)
 			.build();
-	
-	private static final IC2meAccessor C2ME_ACCESSOR = ModAccessorInjector.INSTANCE.get(IC2meAccessor.class);
-	
+
 	/**
 	 * Used to revert the ignore logic in {@link SharedApi} so
 	 * that a given chunk pos can be handled again.
@@ -53,10 +49,8 @@ public class InternalServerGenerator
 	 * If a chunk does get through due the timeout not being long enough that isn't the end of the world.
 	 */
 	private static final int MS_TO_IGNORE_CHUNK_AFTER_COMPLETION = 5_000;
-	
+
 	private static final TicketType<ChunkPos> DH_SERVER_GEN_TICKET = TicketType.create("dh_server_gen_ticket", Comparator.comparingLong(ChunkPos::toLong));
-	
-	private static boolean c2meMissingWarningLogged = false;
 	
 	
 	private final GlobalWorldGenParams params;
@@ -191,31 +185,6 @@ public class InternalServerGenerator
 			&& ModInfo.IS_DEV_BUILD)
 		{
 			throw new IllegalStateException("Internal server generation should be called from one of DH's world gen thread. Current thread: ["+Thread.currentThread().getName()+"]");
-		}
-		
-		
-		// C2ME present?
-		if (C2ME_ACCESSOR == null
-			&& !c2meMissingWarningLogged)
-		{
-			c2meMissingWarningLogged = true;
-			
-			String c2meWarning = "C2ME missing, \n" +
-				"low CPU usage and slow world gen speeds expected. \n" +
-				"DH is set to use MC's internal server for world gen \n" +
-				"this mode is less efficient unless a mod like C2ME is present."
-				;
-			
-			if (Config.Common.Logging.Warning.showSlowWorldGenSettingWarnings.get())
-			{
-				String message =
-					// orange text
-					"\u00A76" + "Distant Horizons: slow world gen." + "\u00A7r\n" +
-						c2meWarning;
-				ClientApi.INSTANCE.showChatMessageNextFrame(message);
-			}
-			
-			LOGGER.warn(c2meWarning);
 		}
 	}
 	private CompletableFuture<ChunkAccess> requestChunkFromServerAsync(ChunkPos chunkPos)
