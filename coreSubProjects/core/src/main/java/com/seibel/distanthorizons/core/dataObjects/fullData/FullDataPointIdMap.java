@@ -71,44 +71,6 @@ public class FullDataPointIdMap
 	private int cachedHashCode = 0;
 	private boolean useIncrementalHash = false;
 
-	/**
-	 * Thread-local cache to avoid repeated HashMap lookups for frequently used block/biome pairs.
-	 * Uses a simple HashMap that's cleared when it grows too large to prevent unbounded growth.
-	 */
-	private static final ThreadLocal<HashMap<BlockBiomeCacheKey, Integer>> THREAD_LOCAL_ID_CACHE =
-		ThreadLocal.withInitial(() -> new HashMap<>(256));
-	private static final int MAX_CACHE_SIZE = 512;
-
-	/** Lightweight key for thread-local cache (avoids BlockBiomeWrapperPair lookup overhead) */
-	private static class BlockBiomeCacheKey
-	{
-		final IBlockStateWrapper blockState;
-		final IBiomeWrapper biome;
-		private int hashCode;
-
-		BlockBiomeCacheKey(IBlockStateWrapper blockState, IBiomeWrapper biome)
-		{
-			this.blockState = blockState;
-			this.biome = biome;
-			// Pre-compute hash since these are immutable wrappers
-			this.hashCode = 31 * blockState.hashCode() + biome.hashCode();
-		}
-
-		@Override
-		public int hashCode() { return hashCode; }
-
-		@Override
-		public boolean equals(Object obj)
-		{
-			if (this == obj) return true;
-			if (!(obj instanceof BlockBiomeCacheKey)) return false;
-			BlockBiomeCacheKey other = (BlockBiomeCacheKey) obj;
-			// Use reference equality first (wrappers are often cached)
-			return (this.blockState == other.blockState && this.biome == other.biome)
-				|| (this.blockState.equals(other.blockState) && this.biome.equals(other.biome));
-		}
-	}
-
 
 
 	//=============//
@@ -168,32 +130,7 @@ public class FullDataPointIdMap
 	 * If an entry with the given values already exists nothing will
 	 * be added but the existing item's ID will still be returned.
 	 */
-	public int addIfNotPresentAndGetId(IBiomeWrapper biome, IBlockStateWrapper blockState)
-	{
-		// Fast path: check thread-local cache first
-		HashMap<BlockBiomeCacheKey, Integer> cache = THREAD_LOCAL_ID_CACHE.get();
-		BlockBiomeCacheKey cacheKey = new BlockBiomeCacheKey(blockState, biome);
-
-		Integer cachedId = cache.get(cacheKey);
-		if (cachedId != null)
-		{
-			return cachedId; // Cache hit - return immediately
-		}
-
-		// Cache miss - use existing code path
-		int id = this.addIfNotPresentAndGetId(BlockBiomeWrapperPair.get(blockState, biome));
-
-		// Add to cache for future lookups
-		cache.put(cacheKey, id);
-
-		// Prevent unbounded cache growth by clearing when too large
-		if (cache.size() > MAX_CACHE_SIZE)
-		{
-			cache.clear();
-		}
-
-		return id;
-	}
+	public int addIfNotPresentAndGetId(IBiomeWrapper biome, IBlockStateWrapper blockState) { return this.addIfNotPresentAndGetId(BlockBiomeWrapperPair.get(blockState, biome)); }
 	private int addIfNotPresentAndGetId(BlockBiomeWrapperPair pair)
 	{
 		// Use computeIfAbsent for single atomic lookup+insert instead of separate get() + compute()
