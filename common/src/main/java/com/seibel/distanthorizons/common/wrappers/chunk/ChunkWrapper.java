@@ -254,7 +254,7 @@ public class ChunkWrapper implements IChunkWrapper
 					// get the next block down
 					y--;
 					blockPos.setY(y);
-					block = BlockStateWrapper.fromBlockState(this.chunk.getBlockState(blockPos), this.wrappedLevel);
+					block = BlockStateWrapper.fromBlockState(this.chunk.getBlockState(blockPos), this.wrappedLevel, block);
 				}
 
 				this.solidHeightMap[x][z] = solidHeight;
