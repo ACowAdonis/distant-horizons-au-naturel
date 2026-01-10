@@ -69,9 +69,13 @@ public class RenderBufferHandler implements AutoCloseable
 	private int culledBufferCount;
 	private int shadowVisibleBufferCount;
 	private int shadowCulledBufferCount;
-	
-	
-	
+
+	// Cached matrices to avoid per-frame allocations
+	private final Matrix4f cachedWorldView = new Matrix4f();
+	private final Matrix4f cachedWorldViewProjection = new Matrix4f();
+
+
+
 	//=============//
 	// constructor //
 	//=============//
@@ -151,19 +155,19 @@ public class RenderBufferHandler implements AutoCloseable
 			int worldHeight = renderParams.clientLevelWrapper.getMaxHeight();
 			
 			Vec3d cameraPos = MC_RENDER.getCameraExactPosition();
-			
-			Matrix4fc matWorldView = new Matrix4f()
+
+			this.cachedWorldView.identity()
 					.setTransposed(renderParams.mcModelViewMatrix.getValuesAsArray())
 					.translate(
-							-(float) cameraPos.x, 
-							-(float) cameraPos.y, 
+							-(float) cameraPos.x,
+							-(float) cameraPos.y,
 							-(float) cameraPos.z);
-			
-			Matrix4fc matWorldViewProjection = new Matrix4f()
+
+			this.cachedWorldViewProjection.identity()
 					.setTransposed(renderParams.dhProjectionMatrix.getValuesAsArray())
-					.mul(matWorldView);
-			
-			frustum.update(worldMinY, worldMinY + worldHeight, new Mat4f(matWorldViewProjection));
+					.mul(this.cachedWorldView);
+
+			frustum.update(worldMinY, worldMinY + worldHeight, new Mat4f(this.cachedWorldViewProjection));
 		}
 		
 		

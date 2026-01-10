@@ -48,6 +48,8 @@ import java.lang.ref.WeakReference;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.PriorityBlockingQueue;
 
 /**
@@ -384,9 +386,11 @@ public class DebugRenderer
 	
 	private static class RendererLists
 	{
-		public final LinkedList<WeakReference<IDebugRenderable>> generalRenderableList = new LinkedList<>();
-		
-		private final HashMap<ConfigEntry<Boolean>, LinkedList<WeakReference<IDebugRenderable>>> renderableListByConfig = new HashMap<>();
+		/** Uses CopyOnWriteArrayList for lock-free iteration from render thread */
+		public final CopyOnWriteArrayList<WeakReference<IDebugRenderable>> generalRenderableList = new CopyOnWriteArrayList<>();
+
+		/** Uses ConcurrentHashMap with CopyOnWriteArrayList values for lock-free access */
+		private final ConcurrentHashMap<ConfigEntry<Boolean>, CopyOnWriteArrayList<WeakReference<IDebugRenderable>>> renderableListByConfig = new ConcurrentHashMap<>();
 		
 		
 		
@@ -394,116 +398,101 @@ public class DebugRenderer
 		
 		public void addRenderable(IDebugRenderable renderable, @Nullable ConfigEntry<Boolean> config)
 		{
-			synchronized (this)
+			if (config != null)
 			{
-				if (config != null)
-				{
-					if (!this.renderableListByConfig.containsKey(config))
-					{
-						this.renderableListByConfig.put(config, new LinkedList<>());
-					}
-					
-					LinkedList<WeakReference<IDebugRenderable>> renderableList = this.renderableListByConfig.get(config);
-					renderableList.add(new WeakReference<>(renderable));
-				}
-				else
-				{
-					this.generalRenderableList.add(new WeakReference<>(renderable));
-				}
+				CopyOnWriteArrayList<WeakReference<IDebugRenderable>> renderableList =
+						this.renderableListByConfig.computeIfAbsent(config, k -> new CopyOnWriteArrayList<>());
+				renderableList.add(new WeakReference<>(renderable));
+			}
+			else
+			{
+				this.generalRenderableList.add(new WeakReference<>(renderable));
 			}
 		}
 		
 		public void removeRenderable(IDebugRenderable renderable, @Nullable ConfigEntry<Boolean> config)
 		{
-			synchronized (this)
+			if (config != null)
 			{
-				if (config != null)
+				CopyOnWriteArrayList<WeakReference<IDebugRenderable>> renderableList = this.renderableListByConfig.get(config);
+				if (renderableList != null)
 				{
-					if (this.renderableListByConfig.containsKey(config))
-					{
-						LinkedList<WeakReference<IDebugRenderable>> renderableList = this.renderableListByConfig.get(config);
-						this.removeRenderableFromInternalList(renderableList, renderable);	
-					}
+					this.removeRenderableFromInternalList(renderableList, renderable);
 				}
-				else
-				{
-					this.removeRenderableFromInternalList(this.generalRenderableList, renderable);
-				}
+			}
+			else
+			{
+				this.removeRenderableFromInternalList(this.generalRenderableList, renderable);
 			}
 		}
-		private void removeRenderableFromInternalList(LinkedList<WeakReference<IDebugRenderable>> rendererList, IDebugRenderable renderable)
+		private void removeRenderableFromInternalList(CopyOnWriteArrayList<WeakReference<IDebugRenderable>> rendererList, IDebugRenderable renderable)
 		{
-			Iterator<WeakReference<IDebugRenderable>> iterator = rendererList.iterator();
-			while (iterator.hasNext())
-			{
-				WeakReference<IDebugRenderable> renderableRef = iterator.next();
-				if (renderableRef.get() == null)
-				{
-					iterator.remove();
-					continue;
-				}
-				
-				if (renderableRef.get() == renderable)
-				{
-					iterator.remove();
-					return;
-				}
-			}
+			// CopyOnWriteArrayList.removeIf is atomic and thread-safe
+			rendererList.removeIf(ref -> ref.get() == null || ref.get() == renderable);
 		}
 		
 		public void clearRenderables()
 		{
 			for (ConfigEntry<Boolean> config : this.renderableListByConfig.keySet())
 			{
-				LinkedList<WeakReference<IDebugRenderable>> renderableList = this.renderableListByConfig.get(config);
+				CopyOnWriteArrayList<WeakReference<IDebugRenderable>> renderableList = this.renderableListByConfig.get(config);
 				if (config.get() && renderableList != null)
 				{
 					renderableList.clear();
 				}
 			}
 		}
-		
-		
-		
+
+
+
 		// rendering //
-		
+
 		public void render(DebugRenderer debugRenderer)
 		{
 			this.renderList(debugRenderer, this.generalRenderableList);
-			
+
 			for (ConfigEntry<Boolean> config : this.renderableListByConfig.keySet())
 			{
-				LinkedList<WeakReference<IDebugRenderable>> renderableList = this.renderableListByConfig.get(config);
-				if (config.get() && renderableList != null && renderableList.size() != 0)
+				CopyOnWriteArrayList<WeakReference<IDebugRenderable>> renderableList = this.renderableListByConfig.get(config);
+				if (config.get() && renderableList != null && !renderableList.isEmpty())
 				{
 					this.renderList(debugRenderer, renderableList);
 				}
 			}
 		}
-		private void renderList(DebugRenderer debugRenderer, LinkedList<WeakReference<IDebugRenderable>> rendererList)
+		private void renderList(DebugRenderer debugRenderer, CopyOnWriteArrayList<WeakReference<IDebugRenderable>> rendererList)
 		{
-			synchronized (this)
+			// CopyOnWriteArrayList provides lock-free iteration - modifications during iteration
+			// are invisible to the iterator, so no synchronization needed
+			ArrayList<WeakReference<IDebugRenderable>> toRemove = null;
+			try
 			{
-				try
+				for (WeakReference<IDebugRenderable> ref : rendererList)
 				{
-					Iterator<WeakReference<IDebugRenderable>> iterator = rendererList.iterator();
-					while (iterator.hasNext())
+					IDebugRenderable renderable = ref.get();
+					if (renderable == null)
 					{
-						WeakReference<IDebugRenderable> ref = iterator.next();
-						IDebugRenderable renderable = ref.get();
-						if (renderable == null)
+						// Collect dead refs for later cleanup (can't remove during iteration)
+						if (toRemove == null)
 						{
-							iterator.remove();
-							continue;
+							toRemove = new ArrayList<>();
 						}
-						
-						renderable.debugRender(debugRenderer);
+						toRemove.add(ref);
+						continue;
 					}
+
+					renderable.debugRender(debugRenderer);
 				}
-				catch (Exception e)
-				{
-					RATE_LIMITED_LOGGER.error("Unexpected Debug renderer error, Error: "+e.getMessage(), e);
-				}
+			}
+			catch (Exception e)
+			{
+				RATE_LIMITED_LOGGER.error("Unexpected Debug renderer error, Error: "+e.getMessage(), e);
+			}
+
+			// Clean up dead refs after iteration
+			if (toRemove != null)
+			{
+				rendererList.removeAll(toRemove);
 			}
 		}
 	}

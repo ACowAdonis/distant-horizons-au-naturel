@@ -208,25 +208,35 @@ public class BeaconRenderHandler
 					
 					try
 					{
-						// lock to make sure we don't try adding beacons to the arrays while processing them
+						// Snapshot the beacon list under a brief lock to minimize blocking
+						ArrayList<DhApiRenderableBox> beaconSnapshot;
 						this.updateLock.lock();
-						
+						try
+						{
+							beaconSnapshot = new ArrayList<>(this.fullBeaconBoxList);
+						}
+						finally
+						{
+							this.updateLock.unlock();
+						}
+
+						// Process snapshot without holding lock (reduces lock contention)
 						Vec3d cameraPos = MC_RENDER.getCameraExactPosition();
 						double mcRenderDistance = MC_RENDER.getRenderDistance() * LodUtil.CHUNK_WIDTH;
 						// multiplying by overdraw prevention helps reduce beacons from rendering strangely
 						// on the border of DH's render distance
 						mcRenderDistance *= RenderUtil.getAutoOverdrawPrevention();
-						
-						
+
+
 						// Clear the existing box group so we can re-populate it.
 						// Since the box group is only used when we trigger an update, clearing it here
 						// and repopulating it is fine.
 						this.beaconBoxGroup.clear();
-						
-						// While iterating over every beacon isn't a great way of doing this, 
+
+						// While iterating over every beacon isn't a great way of doing this,
 						// when 940 beacons were tested this only took ~0.9 Milliseconds, so as long as
 						// we aren't freezing the render thread this method of culling works just fine.
-						for (DhApiRenderableBox box : this.fullBeaconBoxList)
+						for (DhApiRenderableBox box : beaconSnapshot)
 						{
 							// if a beacon is outside the vanilla render distance render it
 							double distance = Vec3d.getHorizontalDistance(cameraPos, box.minPos);
@@ -235,7 +245,7 @@ public class BeaconRenderHandler
 								this.beaconBoxGroup.add(box);
 							}
 						}
-						
+
 						this.updateRenderDataNextFrame = true;
 					}
 					catch (Exception e)
@@ -244,7 +254,6 @@ public class BeaconRenderHandler
 					}
 					finally
 					{
-						this.updateLock.unlock();
 						this.cullingThreadRunning = false;
 					}
 				});

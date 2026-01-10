@@ -253,15 +253,10 @@ public class RenderableBoxGroup
 				this.instanceMaterialVbo = GLMC.glGenBuffers();
 			}
 			
-			// copy over the box list so we can upload without concurrent modification issues
-			this.uploadBoxList.clear();
-			synchronized (this.uploadBoxList)
-			{
-				this.uploadBoxList.addAll(this.boxList);
-			}
-			
-			
-			int boxCount = this.uploadBoxList.size();
+			// Snapshot the box list for lock-free upload (avoids blocking render thread)
+			List<DhApiRenderableBox> uploadSnapshot = new ArrayList<>(this.boxList);
+
+			int boxCount = uploadSnapshot.size();
 			this.uploadedBoxCount = boxCount;
 			
 			
@@ -272,7 +267,7 @@ public class RenderableBoxGroup
 			float[] scalingData = RenderBoxArrayCache.getCachedFloatArray(boxCount * 3, 2);
 			for (int i = 0; i < boxCount; i++)
 			{
-				DhApiRenderableBox box = this.uploadBoxList.get(i);
+				DhApiRenderableBox box = uploadSnapshot.get(i);
 				
 				int dataIndex = i * 3;
 				
@@ -296,7 +291,7 @@ public class RenderableBoxGroup
 			int[] materialData = RenderBoxArrayCache.getCachedIntArray(boxCount, 4);
 			for (int i = 0; i < boxCount; i++)
 			{
-				DhApiRenderableBox box = this.uploadBoxList.get(i);
+				DhApiRenderableBox box = uploadSnapshot.get(i);
 				Color color = box.color;
 				int colorIndex = i * 4;
 				colorData[colorIndex] = color.getRed() / 255.0f;

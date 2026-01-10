@@ -813,21 +813,22 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		{
 			existingArrayList.clear();
 		}
-		
+
 		try
 		{
 			if (inputStream != null)
 			{
-				int nextByte = inputStream.read();
-				while (nextByte != -1)
+				// Use buffered read instead of byte-by-byte for much better performance
+				byte[] buffer = new byte[8192];
+				int bytesRead;
+				while ((bytesRead = inputStream.read(buffer)) != -1)
 				{
-					existingArrayList.add((byte) nextByte);
-					nextByte = inputStream.read();
+					existingArrayList.addElements(existingArrayList.size(), buffer, 0, bytesRead);
 				}
 			}
 		}
 		catch (EOFException ignore) { /* shouldn't happen, but just in case */ }
-		
+
 		return existingArrayList;
 	}
 	

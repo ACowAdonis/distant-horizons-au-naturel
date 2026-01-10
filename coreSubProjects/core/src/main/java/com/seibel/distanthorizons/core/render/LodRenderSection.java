@@ -77,11 +77,12 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	private final LodQuadTree quadTree;
 	private final AtomicInteger uploadTaskCountRef;
 	
-	/** 
-	 * contains the list of beacons currently being rendered in this section 
+	/**
+	 * contains the list of beacons currently being rendered in this section
 	 * if this list is modified the {@link LodRenderSection#beaconRenderHandler} should be updated to match.
+	 * Uses CopyOnWriteArrayList for lock-free reads from the render thread.
 	 */
-	private final List<BeaconBeamDTO> activeBeaconList = new ArrayList<>();
+	private final List<BeaconBeamDTO> activeBeaconList = new CopyOnWriteArrayList<>();
 	@Nullable
 	public final BeaconRenderHandler beaconRenderHandler;
 	@Nullable
@@ -284,10 +285,11 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 					
 					return CompletableFuture.allOf(adjacentLoadFutures).thenRun(() ->
 					{
-						try (ColumnRenderSource northRenderSource = adjacentLoadFutures[0].get();
-							ColumnRenderSource southRenderSource = adjacentLoadFutures[1].get();
-							ColumnRenderSource eastRenderSource = adjacentLoadFutures[2].get();
-							ColumnRenderSource westRenderSource = adjacentLoadFutures[3].get())
+						// Using join() instead of get() - futures are guaranteed complete after allOf()
+						try (ColumnRenderSource northRenderSource = adjacentLoadFutures[0].join();
+							ColumnRenderSource southRenderSource = adjacentLoadFutures[1].join();
+							ColumnRenderSource eastRenderSource = adjacentLoadFutures[2].join();
+							ColumnRenderSource westRenderSource = adjacentLoadFutures[3].join())
 						{
 							ColumnRenderSource[] adjacentRenderSections = new ColumnRenderSource[EDhDirection.CARDINAL_COMPASS.length];
 							adjacentRenderSections[EDhDirection.NORTH.compassIndex] = northRenderSource;
@@ -579,28 +581,24 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 		}
 		
 		
-		// Synchronized to prevent two threads for starting/stopping rendering at once
-		// Shouldn't be necessary, but just in case.
-		synchronized (this.activeBeaconList)
+		// CopyOnWriteArrayList provides thread-safe iteration without blocking readers
+		List<BeaconBeamDTO> activeBeacons = this.beaconBeamRepo.getAllBeamsForPos(this.pos);
+
+
+		// stop rendering current beacons
+		for (BeaconBeamDTO beam : this.activeBeaconList)
 		{
-			List<BeaconBeamDTO> activeBeacons = this.beaconBeamRepo.getAllBeamsForPos(this.pos);
-			
-			
-			// stop rendering current beacons
-			for (BeaconBeamDTO beam : this.activeBeaconList)
-			{
-				this.beaconRenderHandler.stopRenderingBeaconAtPos(beam.blockPos);
-			}
-			
-			// swap old and new active beacon list
-			this.activeBeaconList.clear();
-			this.activeBeaconList.addAll(activeBeacons);
-			
-			// start rendering new beacon list
-			for (BeaconBeamDTO beam : this.activeBeaconList)
-			{
-				this.beaconRenderHandler.startRenderingBeacon(beam);
-			}
+			this.beaconRenderHandler.stopRenderingBeaconAtPos(beam.blockPos);
+		}
+
+		// swap old and new active beacon list
+		this.activeBeaconList.clear();
+		this.activeBeaconList.addAll(activeBeacons);
+
+		// start rendering new beacon list
+		for (BeaconBeamDTO beam : this.activeBeaconList)
+		{
+			this.beaconRenderHandler.startRenderingBeacon(beam);
 		}
 	}
 	
@@ -611,32 +609,28 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 		{
 			return;
 		}
-		
-		
-		synchronized (this.activeBeaconList)
+
+
+		// CopyOnWriteArrayList allows lock-free iteration
+		for (BeaconBeamDTO beam : this.activeBeaconList)
 		{
-			for (BeaconBeamDTO beam : this.activeBeaconList)
-			{
-				this.beaconRenderHandler.stopRenderingBeaconAtPos(beam.blockPos);
-			}
+			this.beaconRenderHandler.stopRenderingBeaconAtPos(beam.blockPos);
 		}
 	}
 	
 	private void startRenderingBeacons()
 	{
-		// do nothing if beacon rendering is unavailable 
+		// do nothing if beacon rendering is unavailable
 		if (this.beaconRenderHandler == null)
 		{
 			return;
 		}
-		
-		
-		synchronized (this.activeBeaconList)
+
+
+		// CopyOnWriteArrayList allows lock-free iteration
+		for (BeaconBeamDTO beam : this.activeBeaconList)
 		{
-			for (BeaconBeamDTO beam : this.activeBeaconList)
-			{
-				this.beaconRenderHandler.startRenderingBeacon(beam);
-			}
+			this.beaconRenderHandler.startRenderingBeacon(beam);
 		}
 	}
 	

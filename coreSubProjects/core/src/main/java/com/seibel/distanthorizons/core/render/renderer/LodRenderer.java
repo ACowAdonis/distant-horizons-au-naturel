@@ -97,14 +97,19 @@ public class LodRenderer
 	@Nullable
 	private DhColorTexture nullableColorTexture;
 	private DHDepthTexture depthTexture;
-	/** 
+	/**
 	 * If true the {@link LodRenderer#framebuffer} is the same as MC's.
 	 * This should only be true in the case of Optifine so LODs won't be overwritten when shaders are enabled.
 	 */
 	private boolean usingMcFramebuffer = false;
-	
-	
-	
+
+	// Cached matrices to avoid per-frame allocations
+	private final Mat4f cachedProjectionMatrix = new Mat4f();
+	private final Mat4f cachedModelViewMatrix = new Mat4f();
+	private final Mat4f cachedCombinedMatrix = new Mat4f();
+
+
+
 	//=============//
 	// constructor //
 	//=============//
@@ -275,10 +280,10 @@ public class LodRenderer
 			{
 				profiler.popPush("LOD Fog");
 
-				Mat4f combinedMatrix = new Mat4f(renderParams.dhProjectionMatrix);
-				combinedMatrix.multiply(renderParams.dhModelViewMatrix);
+				this.cachedCombinedMatrix.set(renderParams.dhProjectionMatrix);
+				this.cachedCombinedMatrix.multiply(renderParams.dhModelViewMatrix);
 
-				FogRenderer.INSTANCE.render(combinedMatrix, renderParams.partialTicks);
+				FogRenderer.INSTANCE.render(this.cachedCombinedMatrix, renderParams.partialTicks);
 			}
 
 
@@ -290,12 +295,12 @@ public class LodRenderer
 			if (cfgDebugWireframe)
 			{
 				profiler.popPush("Debug wireframes");
-				
-				Mat4f combinedMatrix = new Mat4f(renderParams.dhProjectionMatrix);
-				combinedMatrix.multiply(renderParams.dhModelViewMatrix);
-				
-				// Note: this can be very slow if a lot of boxes are being rendered 
-				DebugRenderer.INSTANCE.render(combinedMatrix);
+
+				this.cachedCombinedMatrix.set(renderParams.dhProjectionMatrix);
+				this.cachedCombinedMatrix.multiply(renderParams.dhModelViewMatrix);
+
+				// Note: this can be very slow if a lot of boxes are being rendered
+				DebugRenderer.INSTANCE.render(this.cachedCombinedMatrix);
 			}
 			
 			
@@ -341,11 +346,11 @@ public class LodRenderer
 				if (cfgEnableDhFog)
 				{
 					profiler.popPush("LOD Fog");
-					
-					Mat4f combinedMatrix = new Mat4f(renderParams.dhProjectionMatrix);
-					combinedMatrix.multiply(renderParams.dhModelViewMatrix);
-					
-					FogRenderer.INSTANCE.render(combinedMatrix, renderParams.partialTicks);
+
+					this.cachedCombinedMatrix.set(renderParams.dhProjectionMatrix);
+					this.cachedCombinedMatrix.multiply(renderParams.dhModelViewMatrix);
+
+					FogRenderer.INSTANCE.render(this.cachedCombinedMatrix, renderParams.partialTicks);
 				}
 			}
 		}
