@@ -36,6 +36,7 @@ import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
 import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D;
 import com.seibel.distanthorizons.core.pos.DhChunkPos;
 import com.seibel.distanthorizons.core.pos.DhSectionPos;
+import com.seibel.distanthorizons.core.pos.Pos2D;
 import com.seibel.distanthorizons.core.config.Config;
 import com.seibel.distanthorizons.core.dataObjects.transformers.LodDataBuilder;
 import com.seibel.distanthorizons.core.render.renderer.DebugRenderer;
@@ -43,6 +44,7 @@ import com.seibel.distanthorizons.core.render.renderer.IDebugRenderable;
 import com.seibel.distanthorizons.core.util.ExceptionUtil;
 import com.seibel.distanthorizons.core.util.LodUtil.AssertFailureException;
 import com.seibel.distanthorizons.core.util.ThreadUtil;
+import com.seibel.distanthorizons.core.util.math.Vec3f;
 import com.seibel.distanthorizons.core.util.objects.DataCorruptedException;
 import com.seibel.distanthorizons.core.util.objects.RollingAverage;
 import com.seibel.distanthorizons.core.util.objects.UncheckedInterruptedException;
@@ -92,6 +94,7 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 	private final ExecutorService queueingThread = ThreadUtil.makeSingleThreadPool("World Gen Queue");
 	private volatile boolean generationQueueRunning = false;
 	private DhBlockPos2D generationTargetPos = DhBlockPos2D.ZERO;
+	private volatile Vec3f lookDirection = null;
 		
 	/** just used for rendering to the F3 menu */
 	private volatile int estimatedRemainingTaskCount = 0;
@@ -178,9 +181,15 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 	{
 		// update the target pos
 		this.generationTargetPos = targetPos;
-		
+
 		// needs to be called at least once to start the queue
 		this.tryQueueNewWorldGenRequestsAsync();
+	}
+
+	@Override
+	public void setLookDirection(Vec3f lookDirection)
+	{
+		this.lookDirection = lookDirection;
 	}
 	private synchronized void tryQueueNewWorldGenRequestsAsync()
 	{
@@ -249,8 +258,42 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 		
 		
 		
+		// Capture look direction for use in lambda (volatile read once)
+		Vec3f currentLookDir = this.lookDirection;
+		Pos2D targetPos2D = targetPos.toPos2D();
+
 		TaskDistancePair closestTaskPair = this.waitingTasks.reduceEntries(1024,
-				entry -> new TaskDistancePair(entry.getValue(), DhSectionPos.getSectionBBoxPos(entry.getValue().pos).getCenterBlockPos().toPos2D().chebyshevDist(targetPos.toPos2D())),
+				entry -> {
+					Pos2D taskPos = DhSectionPos.getSectionBBoxPos(entry.getValue().pos).getCenterBlockPos().toPos2D();
+					int baseDist = taskPos.chebyshevDist(targetPos2D);
+
+					// Apply view frustum priority if look direction is available
+					if (currentLookDir != null && baseDist > 0)
+					{
+						// Calculate direction from player to task (2D, ignoring Y)
+						// Note: Pos2D uses x,y but represents x,z in world coordinates
+						float dx = taskPos.getX() - targetPos2D.getX();
+						float dz = taskPos.getY() - targetPos2D.getY();
+						float distSquared = dx * dx + dz * dz;
+						if (distSquared > 0)
+						{
+							float invLen = (float) (1.0 / Math.sqrt(distSquared));
+							dx *= invLen;
+							dz *= invLen;
+
+							// Dot product with look direction (2D, using x and z components)
+							float dot = dx * currentLookDir.x + dz * currentLookDir.z;
+
+							// Map dot product [-1, 1] to distance multiplier [1.5, 1.0]
+							// In front (dot=1): multiplier = 1.0 (no penalty)
+							// Behind (dot=-1): multiplier = 1.5 (50% penalty)
+							float multiplier = 1.0f + 0.25f * (1.0f - dot);
+							return new TaskDistancePair(entry.getValue(), (int)(baseDist * multiplier));
+						}
+					}
+
+					return new TaskDistancePair(entry.getValue(), baseDist);
+				},
 				(TaskDistancePair aTaskPair, TaskDistancePair bTaskPair) -> (aTaskPair.dist < bTaskPair.dist) ? aTaskPair : bTaskPair);
 		
 		if (closestTaskPair == null)

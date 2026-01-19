@@ -152,12 +152,24 @@ public class ColumnBox
 			if (adjCol == null)
 			{
 				// Add an adjacent face if this is opaque face or transparent over the void.
+				// When neighbor isn't loaded, extend face upward to cover any gap above this segment
+				// to prevent seeing caves/holes through the LOD
 				if (!isTransparent || overVoid)
 				{
+					short faceHeight = yHeight;
+					if (RenderDataPointUtil.doesDataPointExist(topData))
+					{
+						short topDataMinY = RenderDataPointUtil.getYMin(topData);
+						if (topDataMinY > maxY)
+						{
+							// There's a gap above us, extend face to cover it
+							faceHeight = (short)(topDataMinY - minY);
+						}
+					}
 					builder.addQuadAdj(
-							EDhDirection.NORTH, 
-							minX, minY, minZ, 
-							width, yHeight, 
+							EDhDirection.NORTH,
+							minX, minY, minZ,
+							width, faceHeight,
 							color, irisBlockMaterialId, LodUtil.MAX_MC_LIGHT, blockLight);
 				}
 			}
@@ -179,10 +191,19 @@ public class ColumnBox
 			{
 				if (!isTransparent || overVoid)
 				{
+					short faceHeight = yHeight;
+					if (RenderDataPointUtil.doesDataPointExist(topData))
+					{
+						short topDataMinY = RenderDataPointUtil.getYMin(topData);
+						if (topDataMinY > maxY)
+						{
+							faceHeight = (short)(topDataMinY - minY);
+						}
+					}
 					builder.addQuadAdj(
-							EDhDirection.SOUTH, 
-							minX, minY, maxZ, 
-							width, yHeight, 
+							EDhDirection.SOUTH,
+							minX, minY, maxZ,
+							width, faceHeight,
 							color, irisBlockMaterialId, LodUtil.MAX_MC_LIGHT, blockLight);
 				}
 			}
@@ -204,10 +225,19 @@ public class ColumnBox
 			{
 				if (!isTransparent || overVoid)
 				{
+					short faceHeight = yHeight;
+					if (RenderDataPointUtil.doesDataPointExist(topData))
+					{
+						short topDataMinY = RenderDataPointUtil.getYMin(topData);
+						if (topDataMinY > maxY)
+						{
+							faceHeight = (short)(topDataMinY - minY);
+						}
+					}
 					builder.addQuadAdj(
-							EDhDirection.WEST, 
-							minX, minY, minZ, 
-							width, yHeight, 
+							EDhDirection.WEST,
+							minX, minY, minZ,
+							width, faceHeight,
 							color, irisBlockMaterialId, LodUtil.MAX_MC_LIGHT, blockLight);
 				}
 			}
@@ -229,10 +259,19 @@ public class ColumnBox
 			{
 				if (!isTransparent || overVoid)
 				{
+					short faceHeight = yHeight;
+					if (RenderDataPointUtil.doesDataPointExist(topData))
+					{
+						short topDataMinY = RenderDataPointUtil.getYMin(topData);
+						if (topDataMinY > maxY)
+						{
+							faceHeight = (short)(topDataMinY - minY);
+						}
+					}
 					builder.addQuadAdj(
-							EDhDirection.EAST, 
-							maxX, minY, minZ, 
-							width, yHeight, 
+							EDhDirection.EAST,
+							maxX, minY, minZ,
+							width, faceHeight,
 							color, irisBlockMaterialId, LodUtil.MAX_MC_LIGHT, blockLight);
 				}
 			}

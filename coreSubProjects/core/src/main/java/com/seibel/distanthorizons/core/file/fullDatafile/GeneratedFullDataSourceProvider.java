@@ -39,6 +39,7 @@ import com.seibel.distanthorizons.core.pos.DhSectionPos;
 import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D;
 import com.seibel.distanthorizons.core.render.renderer.IDebugRenderable;
 import com.seibel.distanthorizons.core.util.LodUtil;
+import com.seibel.distanthorizons.core.util.math.Vec3f;
 import com.seibel.distanthorizons.core.util.threading.PriorityTaskPicker;
 import com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
@@ -523,13 +524,20 @@ public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 im
 	public interface IOnWorldGenCompleteListener
 	{
 		boolean shouldDoWorldGen();
-		
+
 		@Nullable
 		DhBlockPos2D getTargetPosForGeneration();
-		
+
+		/**
+		 * Returns the player's look direction for view frustum prioritization.
+		 * @return the normalized look direction, or null if unavailable
+		 */
+		@Nullable
+		default Vec3f getLookDirectionForGeneration() { return null; }
+
 		/** Fired whenever a section has completed generating */
 		void onWorldGenTaskComplete(long pos);
-		
+
 	}
 	
 }

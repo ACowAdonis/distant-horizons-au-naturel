@@ -41,8 +41,10 @@ import com.seibel.distanthorizons.core.render.renderer.generic.GenericObjectRend
 import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D;
 import com.seibel.distanthorizons.core.render.renderer.DebugRenderer;
 import com.seibel.distanthorizons.core.sql.dto.FullDataSourceV2DTO;
+import com.seibel.distanthorizons.core.util.math.Vec3f;
 import com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil;
 import com.seibel.distanthorizons.core.wrapperInterfaces.minecraft.IMinecraftClientWrapper;
+import com.seibel.distanthorizons.core.wrapperInterfaces.minecraft.IMinecraftRenderWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IClientLevelWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.ILevelWrapper;
 import org.jetbrains.annotations.NotNull;
@@ -68,6 +70,7 @@ public class DhClientLevel extends AbstractDhLevel implements IDhClientLevel
 			.build();
 	
 	private static final IMinecraftClientWrapper MC_CLIENT = SingletonInjector.INSTANCE.get(IMinecraftClientWrapper.class);
+	private static final IMinecraftRenderWrapper MC_RENDER = SingletonInjector.INSTANCE.get(IMinecraftRenderWrapper.class);
 	
 	public final ClientLevelModule clientside;
 	public final IClientLevelWrapper levelWrapper;
@@ -265,6 +268,21 @@ public class DhClientLevel extends AbstractDhLevel implements IDhClientLevel
 	@Override
 	@Nullable
 	public DhBlockPos2D getTargetPosForGeneration() { return new DhBlockPos2D(MC_CLIENT.getPlayerBlockPos()); }
+
+	@Override
+	@Nullable
+	public Vec3f getLookDirectionForGeneration()
+	{
+		try
+		{
+			return MC_RENDER.getLookAtVector();
+		}
+		catch (Exception e)
+		{
+			// May fail if called from wrong thread or during initialization
+			return null;
+		}
+	}
 	
 	
 	

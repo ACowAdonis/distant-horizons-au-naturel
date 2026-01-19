@@ -24,6 +24,7 @@ import com.seibel.distanthorizons.core.generation.tasks.WorldGenResult;
 import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D;
 import com.seibel.distanthorizons.core.pos.DhSectionPos;
 import com.seibel.distanthorizons.core.render.LodQuadTree;
+import com.seibel.distanthorizons.core.util.math.Vec3f;
 import com.seibel.distanthorizons.core.util.objects.RollingAverage;
 import org.jetbrains.annotations.Nullable;
 
@@ -71,14 +72,23 @@ public interface IFullDataSourceRetrievalQueue extends Closeable
 	// setup //
 	//=======//
 	
-	/** 
+	/**
 	 * Starts the retrieval process if not already running,
 	 * and if running updates the target position.
-	 * 
-	 * @param targetPos the position that retrieval should be centered around, 
-	 *                  generally this will be the player's position. 
+	 *
+	 * @param targetPos the position that retrieval should be centered around,
+	 *                  generally this will be the player's position.
 	 * */
 	void startAndSetTargetPos(DhBlockPos2D targetPos);
+
+	/**
+	 * Sets the look direction for view frustum prioritization.
+	 * Tasks in front of the player will be prioritized over tasks behind.
+	 *
+	 * @param lookDirection the normalized direction the player is looking,
+	 *                      or null to disable view frustum prioritization.
+	 */
+	default void setLookDirection(@Nullable Vec3f lookDirection) { }
 	
 	
 	

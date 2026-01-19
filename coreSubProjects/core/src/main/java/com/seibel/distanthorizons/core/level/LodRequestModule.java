@@ -28,6 +28,7 @@ import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
 import com.seibel.distanthorizons.core.logging.f3.F3Screen;
 import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D;
 import com.seibel.distanthorizons.core.util.FormatUtil;
+import com.seibel.distanthorizons.core.util.math.Vec3f;
 import com.seibel.distanthorizons.core.util.ThreadUtil;
 import com.seibel.distanthorizons.core.util.objects.RollingAverage;
 import com.seibel.distanthorizons.core.util.threading.PriorityTaskPicker;
@@ -124,7 +125,8 @@ public class LodRequestModule implements Closeable
 				DhBlockPos2D targetPosForGeneration = this.onWorldGenCompleteListener.getTargetPosForGeneration();
 				if (targetPosForGeneration != null)
 				{
-					lodRequestState.startRequestQueueAndSetTargetPos(targetPosForGeneration);
+					Vec3f lookDirection = this.onWorldGenCompleteListener.getLookDirectionForGeneration();
+					lodRequestState.startRequestQueueAndSetTargetPos(targetPosForGeneration, lookDirection);
 				}
 			}
 		}
@@ -258,10 +260,14 @@ public class LodRequestModule implements Closeable
 		
 		
 		
-		/** @param targetPosForRequest the position that world generation should be centered around */
-		public void startRequestQueueAndSetTargetPos(DhBlockPos2D targetPosForRequest) 
-		{ 
+		/**
+		 * @param targetPosForRequest the position that world generation should be centered around
+		 * @param lookDirection the player's look direction for view frustum prioritization, or null
+		 */
+		public void startRequestQueueAndSetTargetPos(DhBlockPos2D targetPosForRequest, Vec3f lookDirection)
+		{
 			this.retrievalQueue.startAndSetTargetPos(targetPosForRequest);
+			this.retrievalQueue.setLookDirection(lookDirection);
 			this.startProgressUpdateThread();
 		}
 		private void startProgressUpdateThread()

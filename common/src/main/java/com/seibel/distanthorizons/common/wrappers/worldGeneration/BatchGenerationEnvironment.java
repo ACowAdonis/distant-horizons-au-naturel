@@ -452,8 +452,8 @@ public final class BatchGenerationEnvironment implements IBatchGeneratorEnvironm
 						}
 						else if (chunk != null)
 						{
-							// 
-							ChunkWrapper chunkWrapper = new ChunkWrapper(chunk, this.dhServerLevel.getLevelWrapper());
+							// Skip heightmap recreation - will use MC heightmaps (valid for both PRE_EXISTING_ONLY and INTERNAL_SERVER)
+							ChunkWrapper chunkWrapper = new ChunkWrapper(chunk, this.dhServerLevel.getLevelWrapper(), false);
 							chunkWrapperList.set(relX, relZ, chunkWrapper);
 							
 							// try setting the wrapper's lighting
@@ -652,15 +652,9 @@ public final class BatchGenerationEnvironment implements IBatchGeneratorEnvironm
 				
 				throwIfThreadInterrupted();
 
-				// OPTIMIZATION: For PRE_EXISTING_ONLY mode, skip DH heightmap regeneration.
-				// Pre-existing chunks have valid MC heightmaps, and ChunkWrapper has fallbacks
-				// to MC's WORLD_SURFACE and MOTION_BLOCKING heightmaps when DH heightmaps are null.
-				// This provides ~20-40% performance improvement for pre-existing chunk processing.
-				if (genEvent.generatorMode != EDhApiDistantGeneratorMode.PRE_EXISTING_ONLY)
-				{
-					// Only regenerate heightmaps for world-gen modes where MC heightmaps might be incomplete
-					centerChunkWrapper.createDhHeightMaps();
-				}
+				// DH heightmap recreation is skipped - both PRE_EXISTING_ONLY and INTERNAL_SERVER
+				// produce complete chunks with valid MC heightmaps. ChunkWrapper falls back to
+				// MC's WORLD_SURFACE and MOTION_BLOCKING heightmaps when DH heightmaps are null.
 
 				// pre-generated chunks should have lighting but new ones won't
 				if (!centerChunkWrapper.isDhBlockLightingCorrect())

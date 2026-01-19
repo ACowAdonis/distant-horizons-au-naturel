@@ -106,8 +106,9 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
 	public void serverChunkLoadEvent(ChunkEvent.Load event)
 	{
 		ILevelWrapper levelWrapper = ProxyUtil.getLevelWrapper(GetEventLevel(event));
-		
-		IChunkWrapper chunk = new ChunkWrapper(event.getChunk(), levelWrapper);
+
+		// Skip heightmap recreation - server chunks are always complete
+		IChunkWrapper chunk = new ChunkWrapper(event.getChunk(), levelWrapper, false);
 		this.serverApi.serverChunkLoadEvent(chunk, levelWrapper);
 	}
 	

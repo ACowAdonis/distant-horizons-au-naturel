@@ -191,7 +191,8 @@ public class ForgeClientProxy implements AbstractModInitializer.IEventProxy
 	private void onBlockChangeEvent(LevelAccessor level, ChunkAccess chunk)
 	{
 		ILevelWrapper wrappedLevel = ProxyUtil.getLevelWrapper(level);
-		SharedApi.INSTANCE.chunkBlockChangedEvent(new ChunkWrapper(chunk, wrappedLevel), wrappedLevel);
+		// Skip heightmap recreation - chunks from block change events are always complete
+		SharedApi.INSTANCE.chunkBlockChangedEvent(new ChunkWrapper(chunk, wrappedLevel, false), wrappedLevel);
 	}
 
 	@SubscribeEvent
@@ -200,7 +201,8 @@ public class ForgeClientProxy implements AbstractModInitializer.IEventProxy
 		if (MC.clientConnectedToRemoteServer())
 		{
 			ILevelWrapper wrappedLevel = ProxyUtil.getLevelWrapper(GetEventLevel(event));
-			IChunkWrapper chunk = new ChunkWrapper(event.getChunk(), wrappedLevel);
+			// Skip heightmap recreation - client chunks are always complete (received from server)
+			IChunkWrapper chunk = new ChunkWrapper(event.getChunk(), wrappedLevel, false);
 			SharedApi.INSTANCE.chunkLoadEvent(chunk, wrappedLevel);
 		}
 	}

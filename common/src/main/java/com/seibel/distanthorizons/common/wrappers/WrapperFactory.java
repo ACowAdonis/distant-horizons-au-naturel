@@ -178,9 +178,10 @@ public class WrapperFactory implements IWrapperFactory
 			ILevelWrapper levelWrapper = level.isClientSide()
 					? ClientLevelWrapper.getWrapper((ClientLevel)level)
 					: ServerLevelWrapper.getWrapper((ServerLevel)level);
-			
-			
-			return new ChunkWrapper(chunk, levelWrapper);
+
+
+			// Skip heightmap recreation - API-created wrappers are assumed to be for complete chunks
+			return new ChunkWrapper(chunk, levelWrapper, false);
 		}
 		// incorrect number of parameters from the API
 		else

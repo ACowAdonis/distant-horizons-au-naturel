@@ -204,14 +204,16 @@ public class ServerLevelWrapper implements IServerLevelWrapper
 		{
 			return null;
 		}
-		
+
 		ChunkAccess chunk = this.level.getChunk(pos.getX(), pos.getZ(), ChunkStatus.FULL, false);
 		if (chunk == null)
 		{
 			return null;
 		}
-		
-		return new ChunkWrapper(chunk, this);
+
+		// Skip DH heightmap recreation - chunks at FULL status have valid MC heightmaps.
+		// ChunkWrapper falls back to MC's WORLD_SURFACE/MOTION_BLOCKING heightmaps when DH heightmaps are null.
+		return new ChunkWrapper(chunk, this, false);
 	}
 	
 	@Override

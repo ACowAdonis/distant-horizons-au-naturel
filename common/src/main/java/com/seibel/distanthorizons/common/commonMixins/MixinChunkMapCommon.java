@@ -62,8 +62,9 @@ public class MixinChunkMapCommon
 		
 		
 		// submit the update event
+		// Skip heightmap recreation - chunks being saved are always complete
 		ServerApi.INSTANCE.serverChunkSaveEvent(
-				new ChunkWrapper(chunk, ServerLevelWrapper.getWrapper(level)),
+				new ChunkWrapper(chunk, ServerLevelWrapper.getWrapper(level), false),
 				ServerLevelWrapper.getWrapper(level)
 		);
 	}
