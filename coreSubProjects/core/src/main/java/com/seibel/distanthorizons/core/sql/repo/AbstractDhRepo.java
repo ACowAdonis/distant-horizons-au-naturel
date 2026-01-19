@@ -46,11 +46,16 @@ import java.util.concurrent.locks.ReentrantLock;
 public abstract class AbstractDhRepo<TKey, TDTO extends IBaseDTO<TKey>> implements AutoCloseable
 {
 	private static final DhLogger LOGGER = new DhLoggerBuilder().build();
-	
+
 	public static final String DEFAULT_DATABASE_TYPE = "jdbc:sqlite";
 	/** a value of 0 means there's no timeout */
 	public static final int TIMEOUT_SECONDS = 0;
-	
+
+	/** 64MB page cache - significantly improves read performance for large databases */
+	private static final int PRAGMA_CACHE_SIZE_KB = 65536;
+	/** 256MB memory-mapped I/O - allows OS to cache database pages directly */
+	private static final long PRAGMA_MMAP_SIZE_BYTES = 268435456L;
+
 	private static final ConcurrentHashMap<String, Connection> CONNECTIONS_BY_CONNECTION_STRING = new ConcurrentHashMap<>();
 	private static final ConcurrentHashMap<AbstractDhRepo<?, ?>, String> ACTIVE_CONNECTION_STRINGS_BY_REPO = new ConcurrentHashMap<>();
 	
@@ -148,7 +153,9 @@ public abstract class AbstractDhRepo<TKey, TDTO extends IBaseDTO<TKey>> implemen
 			{
 				try
 				{
-					return DriverManager.getConnection(connectionString);
+					Connection conn = DriverManager.getConnection(connectionString);
+					applyPerformancePragmas(conn, this.databaseFile);
+					return conn;
 				}
 				catch (SQLException e)
 				{
@@ -160,14 +167,78 @@ public abstract class AbstractDhRepo<TKey, TDTO extends IBaseDTO<TKey>> implemen
 		{
 			throw new SQLException("Unable to get repo with connection string ["+this.connectionString+"]");
 		}
-		
+
 		ACTIVE_CONNECTION_STRINGS_BY_REPO.put(this, this.connectionString);
-		
+
 		DatabaseUpdater.runAutoUpdateScripts(this);
 	}
-	
-	
-	
+
+	/**
+	 * Applies SQLite PRAGMA settings to optimize database performance.
+	 * These settings are applied per-connection and significantly improve I/O performance.
+	 */
+	private static void applyPerformancePragmas(Connection conn, File databaseFile)
+	{
+		try (Statement stmt = conn.createStatement())
+		{
+			// Increase page cache size (negative value = KB, so -65536 = 64MB)
+			// Default is ~2000 pages (~8MB). Larger cache reduces disk I/O for repeated queries.
+			stmt.execute("PRAGMA cache_size = -" + PRAGMA_CACHE_SIZE_KB);
+
+			// Use memory for temporary tables/indexes instead of temp files
+			// Improves performance for queries with computed columns (like distance calculations)
+			stmt.execute("PRAGMA temp_store = MEMORY");
+
+			// Enable memory-mapped I/O if the database is on a local filesystem
+			// This allows the OS to cache database pages directly, bypassing SQLite's buffer
+			// Disabled for network paths as mmap can be unreliable on network filesystems
+			if (!isNetworkPath(databaseFile))
+			{
+				stmt.execute("PRAGMA mmap_size = " + PRAGMA_MMAP_SIZE_BYTES);
+			}
+		}
+		catch (SQLException e)
+		{
+			// Non-fatal: PRAGMAs are optimizations, not requirements
+			LOGGER.warn("Failed to apply SQLite performance PRAGMAs: {}", e.getMessage());
+		}
+	}
+
+	/**
+	 * Attempts to detect if a file is on a network path.
+	 * This is a heuristic check - not all network paths can be reliably detected.
+	 */
+	private static boolean isNetworkPath(File file)
+	{
+		try
+		{
+			String path = file.getAbsolutePath();
+
+			// Windows UNC paths (\\server\share)
+			if (path.startsWith("\\\\"))
+			{
+				return true;
+			}
+
+			// Check if the file's filesystem is a network type
+			// This works on Linux/Mac for NFS, SMB, etc.
+			java.nio.file.Path nioPath = file.toPath();
+			String fileStoreType = java.nio.file.Files.getFileStore(nioPath).type().toLowerCase();
+			if (fileStoreType.contains("nfs") || fileStoreType.contains("cifs") ||
+				fileStoreType.contains("smb") || fileStoreType.contains("network"))
+			{
+				return true;
+			}
+		}
+		catch (Exception e)
+		{
+			// If we can't determine, assume local (safer for performance)
+		}
+		return false;
+	}
+
+
+
 	//===============//
 	// high level DB //
 	//===============//
