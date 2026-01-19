@@ -20,42 +20,40 @@
 package com.seibel.distanthorizons.api.enums.worldGeneration;
 
 /**
+ * Generation steps for LOD data. <br><br>
+ *
+ * Only PRE_EXISTING_ONLY and INTERNAL_SERVER generation modes are supported,
+ * which means chunks are always complete (LIGHT status). <br><br>
+ *
  * DOWN_SAMPLED, <br>
- * 
  * EMPTY, <br>
  * STRUCTURE_START, <br>
  * STRUCTURE_REFERENCE, <br>
  * BIOMES, <br>
  * NOISE, <br>
- * SURFACE, <br>
- * CARVERS, <br>
- * LIQUID_CARVERS, <br>
- * FEATURES, <br>
- * LIGHT, <br>
+ * LIGHT <br>
  *
  * @author James Seibel
- * @version 2023-4-20
+ * @version 2024-12-13
  * @since API 1.0.0
  */
 public enum EDhApiWorldGenerationStep
 {
-	/** 
+	/**
 	 * Only used when using N-sized world generators or server-side retrieval.
 	 * This denotes that the given datasource was created using lower quality LOD data from above it in the quad tree. <br>
-	 * 
+	 *
 	 * This isn't a valid option for queuing world generation.
 	 */
 	DOWN_SAMPLED(-1, "down_sampled"),
-	
+
 	EMPTY(0, "empty"),
 	STRUCTURE_START(1, "structure_start"),
 	STRUCTURE_REFERENCE(2, "structure_reference"),
 	BIOMES(3, "biomes"),
 	NOISE(4, "noise"),
-	SURFACE(5, "surface"),
-	CARVERS(6, "carvers"),
-	LIQUID_CARVERS(7, "liquid_carvers"),
-	FEATURES(8, "features"),
+	// Values 5-8 (SURFACE, CARVERS, LIQUID_CARVERS, FEATURES) have been removed.
+	// Only PRE_EXISTING_ONLY and INTERNAL_SERVER modes are supported.
 	LIGHT(9, "light");
 	
 	

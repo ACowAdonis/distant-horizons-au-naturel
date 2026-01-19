@@ -98,20 +98,11 @@ public class BatchGenerator implements IDhApiWorldGenerator
 			ExecutorService worldGeneratorThreadPool,
 			Consumer<Object[]> resultConsumer)
 	{
-		EDhApiWorldGenerationStep targetStep;
-		switch (generatorMode)
-		{
-			case PRE_EXISTING_ONLY: // Only load in existing chunks.
-				targetStep = EDhApiWorldGenerationStep.EMPTY; // special logic
-				break;
-			case INTERNAL_SERVER:
-				targetStep = EDhApiWorldGenerationStep.LIGHT;
-				break;
+		// Only PRE_EXISTING_ONLY and INTERNAL_SERVER modes are supported
+		EDhApiWorldGenerationStep targetStep = (generatorMode == EDhApiDistantGeneratorMode.INTERNAL_SERVER)
+				? EDhApiWorldGenerationStep.LIGHT
+				: EDhApiWorldGenerationStep.EMPTY; // PRE_EXISTING_ONLY uses special logic
 
-			default:
-				throw new IllegalArgumentException("no target step defined for generator mode: ["+generatorMode+"].");
-		}
-		
 		// the consumer needs to be wrapped like this because the API can't use DH core objects (and IChunkWrapper can't be easily put into the API project)
 		Consumer<IChunkWrapper> consumerWrapper = (chunkWrapper) -> resultConsumer.accept(new Object[]{chunkWrapper});
 		try

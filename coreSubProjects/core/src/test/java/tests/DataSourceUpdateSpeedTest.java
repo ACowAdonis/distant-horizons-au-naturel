@@ -91,7 +91,7 @@ public class DataSourceUpdateSpeedTest
 			}
 			
 			byte[] columnGenStep = new byte[FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH];
-			Arrays.fill(columnGenStep, EDhApiWorldGenerationStep.FEATURES.value);
+			Arrays.fill(columnGenStep, EDhApiWorldGenerationStep.LIGHT.value);
 			
 			byte[] columnWorldCompressionMode = new byte[FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH];
 			Arrays.fill(columnWorldCompressionMode, EDhApiWorldCompressionMode.VISUALLY_EQUAL.value);
@@ -144,7 +144,7 @@ public class DataSourceUpdateSpeedTest
 			}
 			
 			byte[] columnGenStep = new byte[FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH];
-			Arrays.fill(columnGenStep, EDhApiWorldGenerationStep.FEATURES.value);
+			Arrays.fill(columnGenStep, EDhApiWorldGenerationStep.LIGHT.value);
 			
 			byte[] columnWorldCompressionMode = new byte[FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH];
 			Arrays.fill(columnWorldCompressionMode, EDhApiWorldCompressionMode.VISUALLY_EQUAL.value);
