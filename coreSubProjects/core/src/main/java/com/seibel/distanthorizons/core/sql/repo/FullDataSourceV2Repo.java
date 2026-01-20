@@ -196,6 +196,43 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 	}
 	
 	
+	/**
+	 * Atomic UPSERT using SQLite's ON CONFLICT clause.
+	 * Uses COALESCE for ApplyToParent/ApplyToChildren to preserve existing values when null is passed,
+	 * which is needed to prevent concurrent modification during update propagation.
+	 */
+	private final String upsertSqlTemplate =
+		"INSERT INTO "+this.getTableName() + " (\n" +
+		"   DetailLevel, PosX, PosZ, \n" +
+		"   MinY, DataChecksum, \n" +
+		"   Data, ColumnGenerationStep, ColumnWorldCompressionMode, Mapping, \n" +
+		"   NorthAdjData, SouthAdjData, EastAdjData, WestAdjData, \n" +
+		"   DataFormatVersion, CompressionMode, ApplyToParent, ApplyToChildren, \n" +
+		"   LastModifiedUnixDateTime, CreatedUnixDateTime) \n" +
+		"VALUES( \n" +
+		"    ?, ?, ?, \n" +
+		"    ?, ?, \n" +
+		"    ?, ?, ?, ?, \n" +
+		"    ?, ?, ?, ?, \n" +
+		"    ?, ?, ?, ?, \n" +
+		"    ?, ? \n" +
+		") \n" +
+		"ON CONFLICT(DetailLevel, PosX, PosZ) DO UPDATE SET \n" +
+		"   DataChecksum = excluded.DataChecksum, \n" +
+		"   Data = excluded.Data, \n" +
+		"   ColumnGenerationStep = excluded.ColumnGenerationStep, \n" +
+		"   ColumnWorldCompressionMode = excluded.ColumnWorldCompressionMode, \n" +
+		"   Mapping = excluded.Mapping, \n" +
+		"   NorthAdjData = excluded.NorthAdjData, \n" +
+		"   SouthAdjData = excluded.SouthAdjData, \n" +
+		"   EastAdjData = excluded.EastAdjData, \n" +
+		"   WestAdjData = excluded.WestAdjData, \n" +
+		"   DataFormatVersion = excluded.DataFormatVersion, \n" +
+		"   CompressionMode = excluded.CompressionMode, \n" +
+		"   ApplyToParent = COALESCE(excluded.ApplyToParent, ApplyToParent), \n" +
+		"   ApplyToChildren = COALESCE(excluded.ApplyToChildren, ApplyToChildren), \n" +
+		"   LastModifiedUnixDateTime = excluded.LastModifiedUnixDateTime;";
+
 	private final String insertSqlTemplate =
 		"INSERT INTO "+this.getTableName() + " (\n" +
 		"   DetailLevel, PosX, PosZ, \n" +
@@ -328,9 +365,89 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		
 		return statement;
 	}
-	
-	
-	
+
+	/**
+	 * Overrides the base save() to use atomic UPSERT instead of check-then-insert/update.
+	 * This eliminates the need for per-position locking and prevents race conditions.
+	 */
+	@Override
+	public void save(FullDataSourceV2DTO dto)
+	{
+		try (PreparedStatement statement = this.createUpsertStatement(dto);
+			 ResultSet result = this.query(statement))
+		{
+			// result is unused - UPSERT doesn't return rows
+		}
+		catch (DbConnectionClosedException ignored)
+		{
+			// Connection was closed, nothing to do
+		}
+		catch (SQLException e)
+		{
+			String message = "Unexpected DTO upsert error: [" + e.getMessage() + "].";
+			LOGGER.error(message);
+			throw new RuntimeException(message, e);
+		}
+	}
+
+	@Nullable
+	private PreparedStatement createUpsertStatement(FullDataSourceV2DTO dto) throws SQLException
+	{
+		PreparedStatement statement = this.createPreparedStatement(this.upsertSqlTemplate);
+		if (statement == null)
+		{
+			return null;
+		}
+
+		int i = 1;
+		statement.setInt(i++, DhSectionPos.getDetailLevel(dto.pos) - DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL);
+		statement.setInt(i++, DhSectionPos.getX(dto.pos));
+		statement.setInt(i++, DhSectionPos.getZ(dto.pos));
+
+		statement.setInt(i++, 0); // deprecated MinY column
+		statement.setInt(i++, dto.dataChecksum);
+
+		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedDataByteArray.elements()), dto.compressedDataByteArray.size());
+		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedColumnGenStepByteArray.elements()), dto.compressedColumnGenStepByteArray.size());
+		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedWorldCompressionModeByteArray.elements()), dto.compressedWorldCompressionModeByteArray.size());
+		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedMappingByteArray.elements()), dto.compressedMappingByteArray.size());
+		// adjacent full data
+		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedNorthAdjDataByteArray.elements()), dto.compressedNorthAdjDataByteArray.size());
+		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedSouthAdjDataByteArray.elements()), dto.compressedSouthAdjDataByteArray.size());
+		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedEastAdjDataByteArray.elements()), dto.compressedEastAdjDataByteArray.size());
+		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedWestAdjDataByteArray.elements()), dto.compressedWestAdjDataByteArray.size());
+
+		statement.setByte(i++, dto.dataFormatVersion);
+		statement.setByte(i++, dto.compressionModeValue);
+
+		// For UPSERT with COALESCE: null means "keep existing value", false/true means "set this value"
+		// We use setObject with null to properly pass NULL to SQLite
+		if (dto.applyToParent != null)
+		{
+			statement.setBoolean(i++, dto.applyToParent);
+		}
+		else
+		{
+			statement.setNull(i++, java.sql.Types.BOOLEAN);
+		}
+
+		if (dto.applyToChildren != null)
+		{
+			statement.setBoolean(i++, dto.applyToChildren);
+		}
+		else
+		{
+			statement.setNull(i++, java.sql.Types.BOOLEAN);
+		}
+
+		statement.setLong(i++, System.currentTimeMillis()); // last modified unix time
+		statement.setLong(i++, dto.createdUnixDateTime != 0 ? dto.createdUnixDateTime : System.currentTimeMillis()); // created unix time
+
+		return statement;
+	}
+
+
+
 	//=================//
 	// partial selects //
 	//=================//

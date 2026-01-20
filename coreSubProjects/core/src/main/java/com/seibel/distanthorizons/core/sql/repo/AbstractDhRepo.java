@@ -181,6 +181,10 @@ public abstract class AbstractDhRepo<TKey, TDTO extends IBaseDTO<TKey>> implemen
 	{
 		try (Statement stmt = conn.createStatement())
 		{
+			// Wait up to 5 seconds when the database is locked instead of failing immediately
+			// This prevents spurious failures during concurrent access
+			stmt.execute("PRAGMA busy_timeout = 5000");
+
 			// Increase page cache size (negative value = KB, so -65536 = 64MB)
 			// Default is ~2000 pages (~8MB). Larger cache reduces disk I/O for repeated queries.
 			stmt.execute("PRAGMA cache_size = -" + PRAGMA_CACHE_SIZE_KB);
