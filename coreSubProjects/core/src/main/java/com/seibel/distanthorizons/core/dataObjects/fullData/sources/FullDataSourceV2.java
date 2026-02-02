@@ -348,17 +348,6 @@ public class FullDataSourceV2
 					&& (DhSectionPos.getDetailLevel(this.pos) < FullDataSourceProviderV2.ROOT_SECTION_DETAIL_LEVEL);
 			
 		}
-		else if (inputDetailLevel - 1 == thisDetailLevel)
-		{
-			dataChanged = this.downsampleFromOneAboveDetailLevel(inputDataSource, remappedIds);
-			
-			// propagating down, children will need changes
-			
-			this.applyToChildren =
-					dataChanged
-					&& (BoolUtil.falseIfNull(this.applyToChildren) || BoolUtil.falseIfNull(inputDataSource.applyToChildren))
-					&& (DhSectionPos.getDetailLevel(this.pos) > FullDataSourceProviderV2.LEAF_SECTION_DETAIL_LEVEL);
-		}
 		else
 		{
 			// other detail levels aren't supported since it would be more difficult to maintain
@@ -958,105 +947,9 @@ public class FullDataSourceV2
 		value /= 4;
 		return value;
 	}
-	
-	/** 
-	 * Only downsamples into a given column if this data source doesn't
-	 * already contain data in that column.
-	 * This is done to prevent accidentally downsampling onto already present higher-detail data.
-	 */
-	public boolean downsampleFromOneAboveDetailLevel(FullDataSourceV2 inputDataSource, int[] remappedIds)
-	{
-		if (DhSectionPos.getDetailLevel(inputDataSource.pos) - 1 != DhSectionPos.getDetailLevel(this.pos))
-		{
-			throw new IllegalArgumentException("Input data source must be exactly 1 detail level above this data source. Expected [" + (DhSectionPos.getDetailLevel(this.pos) - 1) + "], received [" + DhSectionPos.getDetailLevel(inputDataSource.pos) + "].");
-		}
-		
-		// input is one detail level higher (lower detail)
-		// so 1x1 input data points will be converted into 2x2 recipient data point
-		
-		
-		// determine where in this data source should be read from
-		// since the input is one detail level above this will be one of input position's 4 children
-		int minParentXPos = DhSectionPos.getX(DhSectionPos.getChildByIndex(inputDataSource.pos, 0));
-		int inputOffsetX = (DhSectionPos.getX(this.pos) == minParentXPos) ? 0 : (WIDTH / 2);
-		int minParentZPos = DhSectionPos.getZ(DhSectionPos.getChildByIndex(inputDataSource.pos, 0));
-		int inputOffsetZ = (DhSectionPos.getZ(this.pos) == minParentZPos) ? 0 : (WIDTH / 2);
-		
-		
-		
-		// merge the input's data points
-		// into this data source's
-		boolean dataChanged = false;
-		for (int x = 0; x < WIDTH; x++)
-		{
-			for (int z = 0; z < WIDTH; z++)
-			{
-				// recipient index is 1-to-1
-				int recipientIndex = relativePosToIndex(x, z);
-				
-				int inputX = (x / 2) + inputOffsetX;
-				int inputZ = (z / 2) + inputOffsetZ;
-				int inputIndex = relativePosToIndex(inputX, inputZ);
-				
-				
-				// world gen //
-				
-				// a separate generation step needs to be used so can replace
-				// this data with higher-quality data when it is available
-				byte inputGenStep = EDhApiWorldGenerationStep.DOWN_SAMPLED.value;
-				this.columnGenerationSteps.set(recipientIndex, inputGenStep);
-				
-				
-				// world compression //
-				byte worldCompressionMode = inputDataSource.columnWorldCompressionMode.getByte(recipientIndex);
-				this.columnWorldCompressionMode.set(recipientIndex, worldCompressionMode);
-				
-				
-				
-				// data points //
-				
-				// check if this column should be downsampled
-				boolean downSampleColumn;
-				if (this.dataPoints[recipientIndex] == null)
-				{
-					downSampleColumn = true;
-				}
-				else
-				{
-					downSampleColumn = true; // assume empty until we find non-empty data
-					for (long dataPoint : this.dataPoints[recipientIndex])
-					{
-						if (dataPoint != FullDataPointUtil.EMPTY_DATA_POINT)
-						{
-							downSampleColumn = false;
-							break;
-						}
-					}
-				}
-				
-				if (downSampleColumn)
-				{
-					LongArrayList inputDataArray = inputDataSource.dataPoints[inputIndex];
-					this.dataPoints[recipientIndex] = inputDataArray;
-					this.remapDataColumn(recipientIndex, remappedIds);
-					
-					if (RUN_DATA_ORDER_VALIDATION)
-					{
-						throwIfDataColumnInWrongOrder(inputDataSource.pos, this.dataPoints[recipientIndex]);
-					}
-					
-					dataChanged = true;
-				}
-				
-				this.isEmpty = false;
-			}
-		}
-		
-		return dataChanged;
-	}
-	
-	
-	
+
+
+
 	//===================//
 	// adjacent clearing //
 	//===================//

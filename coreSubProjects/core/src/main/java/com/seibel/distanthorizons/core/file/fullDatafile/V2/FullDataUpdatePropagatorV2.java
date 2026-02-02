@@ -113,12 +113,7 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 				}
 				
 				this.runParentUpdates(executor, targetBlockPos);
-				
-				if (Config.Common.LodBuilding.Experimental.upsampleLowerDetailLodsToFillHoles.get())
-				{
-					this.runChildUpdates(executor, targetBlockPos);
-				}
-				
+
 			}
 			catch (InterruptedException ignored)
 			{
@@ -256,125 +251,9 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 			}
 		}
 	}
-	/** stops if it finds any LOD data */
-	private void runChildUpdates(PriorityTaskPicker.Executor executor, DhBlockPos targetBlockPos)
-	{
-		int maxUpdateTaskCount = getMaxPropagateTaskCount();
-		
-		// queue child updates
-		if (executor.getQueueSize() < maxUpdateTaskCount
-			&& this.updatingPosSet.size() < maxUpdateTaskCount)
-		{
-			// get the positions that need to be applied to their children
-			LongArrayList childUpdatePosList = this.provider.repo.getChildPositionsToUpdate(targetBlockPos.getX(), targetBlockPos.getZ(), maxUpdateTaskCount);
-			
-			// queue the updates
-			for (long parentUpdatePos : childUpdatePosList)
-			{
-				// stop if there are already a bunch of updates queued
-				if (this.updatingPosSet.size() > maxUpdateTaskCount
-					|| executor.getQueueSize() > maxUpdateTaskCount)
-				{
-					break;
-				}
-				
-				// skip already updating positions
-				if (!this.updatingPosSet.add(parentUpdatePos))
-				{
-					continue;
-				}
-				
-				try
-				{
-					executor.execute(() ->
-					{
-						ReentrantLock parentReadLock = this.dataUpdater.updateLockProvider.getLock(parentUpdatePos);
-						boolean parentLocked = false;
-						try
-						{
-							//LOGGER.info("updating parent: "+parentUpdatePos);
-							
-							// Locking the parent before the children should prevent deadlocks.
-							// TryLock is used instead of lock so this thread can handle a different update.
-							if (parentReadLock.tryLock())
-							{
-								parentLocked = true;
-								this.dataUpdater.lockedPosSet.add(parentUpdatePos);
-								
-								try (FullDataSourceV2 parentDataSource = this.provider.get(parentUpdatePos))
-								{
-									// will return null if the file handler is shutting down
-									if (parentDataSource != null)
-									{
-										// apply parent to each child
-										for (int i = 0; i < 4; i++)
-										{
-											long childPos = DhSectionPos.getChildByIndex(parentUpdatePos, i);
-											
-											ReentrantLock childWriteLock = this.dataUpdater.updateLockProvider.getLock(childPos);
-											try
-											{
-												childWriteLock.lock();
-												this.dataUpdater.lockedPosSet.add(childPos);
-												
-												try (FullDataSourceV2 childDataSource = this.provider.get(childPos))
-												{
-													// will return null if the file handler is shutting down
-													if (childDataSource != null)
-													{
-														childDataSource.updateFromDataSource(parentDataSource);
-														
-														// don't propagate child updates past the bottom of the tree
-														if (DhSectionPos.getDetailLevel(childPos) != DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL)
-														{
-															childDataSource.applyToChildren = true;
-														}
-														
-														this.dataUpdater.updateDataSource(childDataSource);
-													}
-												}
-											}
-											catch (Exception e)
-											{
-												LOGGER.error("Unexpected in child update propagation for parent pos: ["+DhSectionPos.toString(parentUpdatePos)+"], child pos: [" + DhSectionPos.toString(parentUpdatePos) + "], Error: [" + e.getMessage() + "].", e);
-											}
-											finally
-											{
-												this.provider.repo.setApplyToChild(parentUpdatePos, false);
-												
-												childWriteLock.unlock();
-												this.dataUpdater.lockedPosSet.remove(childPos);
-											}
-										}
-									}
-								}
-							}
-						}
-						finally
-						{
-							if (parentLocked)
-							{
-								parentReadLock.unlock();
-								this.dataUpdater.lockedPosSet.remove(parentUpdatePos);
-							}
-							
-							this.updatingPosSet.remove(parentUpdatePos);
-						}
-					});
-				}
-				catch (RejectedExecutionException ignore)
-				{ /* the executor was shut down, it should be back up shortly and able to accept new jobs */ }
-				catch (Exception e)
-				{
-					this.updatingPosSet.remove(parentUpdatePos);
-					throw e;
-				}
-			}
-		}
-	}
-	
-	
-	
+
+
+
 	//===========//
 	// overrides //
 	//===========//

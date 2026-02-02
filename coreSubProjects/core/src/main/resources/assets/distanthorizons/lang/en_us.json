@@ -641,16 +641,6 @@
   "distanthorizons.config.common.lodBuilding.showMigrationChatWarning":
     "Log Migration In Chat",
 
-  
-  "distanthorizons.config.common.lodBuilding.experimental":
-    "Experimental",
-
-  "distanthorizons.config.common.lodBuilding.experimental.upsampleLowerDetailLodsToFillHoles":
-    "Upsample Lower Detail LODs To Fill Holes",
-  "distanthorizons.config.common.lodBuilding.experimental.upsampleLowerDetailLodsToFillHoles.@tooltip":
-    "When active DH will attempt to fill missing LOD data \nwith any data that is present in the tree, preventing holes when moving \nwhen a N-sized generator (or server) is active. \n\n§6EXPERIMENTAL§r Will increase harddrive use and may cause rendering issues. \nSee the config file for more details.",
-
-
 
 
   "distanthorizons.config.common.multiThreading":
@@ -788,19 +778,9 @@
   "distanthorizons.config.server.experimental.enableNSizedGeneration":
     "Enable N-sized generation",
   "distanthorizons.config.server.experimental.enableNSizedGeneration.@tooltip":
-    "When enabled on the client, this allows loading lower detail levels as needed to speed up terrain generation.\nThis must also be enabled on the server; otherwise, it will have no effect.\nFor better performance when switching LOD detail levels, enabling [upsampleLowerDetailLodsToFillHoles] is recommended.",
+    "When enabled on the client, this allows loading lower detail levels as needed to speed up terrain generation.\nThis must also be enabled on the server; otherwise, it will have no effect.",
 
 
-  
-  
-    
-    
-    
-    
-  
-  
-    
-    
   "distanthorizons.config.enum.EDhApiQualityPreset.CUSTOM":
     "Custom",
   "distanthorizons.config.enum.EDhApiQualityPreset.MINIMUM":
