@@ -400,27 +400,6 @@
   "distanthorizons.config.client.advanced.graphics.experimental.earthCurveRatio.@tooltip":
     "A value of 1 is equivalent to the curvature of Earth in real life. \nThe minimum accepted value is 50 and the maximum value is 5000. \nEverything between 1 and 49 will be rounded up to 50.",
 
-  "distanthorizons.config.client.advanced.graphics.experimental.onlyLoadCenterLods":
-    "Only load center LODs",
-  "distanthorizons.config.client.advanced.graphics.experimental.onlyLoadCenterLods.@tooltip":
-    "Skips loading adjacent LODs to significantly reduce load times (~5x)\nbut causes lighting on LOD borders to appear as full-bright\nand other graphical bugs.\n",
-
-
-
-  "distanthorizons.config.client.advanced.autoUpdater":
-    "Auto Updater",
-  
-  "distanthorizons.config.client.advanced.autoUpdater.enableAutoUpdater":
-    "Enable automatic updates",
-  "distanthorizons.config.client.advanced.autoUpdater.enableSilentUpdates":
-    "Enable Silent Updates",
-  "distanthorizons.config.client.advanced.autoUpdater.enableSilentUpdates.@tooltip":
-    "Automatically updates the mod when an update is available",
-  "distanthorizons.config.client.advanced.autoUpdater.updateBranch":
-    "Update Branch",
-  "distanthorizons.config.client.advanced.autoUpdater.updateBranch.@tooltip":
-    "Where to download the latest update from. \n\nAuto: Downloads either stable or nightly builds based on the current jar. \nStable: Stable builds from Modrinth. \nNightly: Nightly builds from Gitlab.",
-
 
 
   "distanthorizons.config.client.advanced.multiplayer":

@@ -853,18 +853,6 @@ public class Config
 							.addListener(WorldCurvatureConfigEventHandler.INSTANCE)
 							.build();
 					
-					// TODO should be replaced with a better long-term solution
-					@Deprecated
-					public static ConfigEntry<Boolean> onlyLoadCenterLods = new ConfigEntry.Builder<Boolean>()
-							.set(false)
-							.comment(""
-									+ "For internal testing:\n"
-									+ "Skips loading adjacent LODs to significantly reduce load times (~5x)\n"
-									+ "but causes lighting on LOD borders to appear as full-bright\n"
-									+ "and other graphical bugs.\n"
-									+ "")
-							.addListener(ReloadLodsConfigEventHandler.DELAYED_INSTANCE)
-							.build();
 				}
 				
 			}

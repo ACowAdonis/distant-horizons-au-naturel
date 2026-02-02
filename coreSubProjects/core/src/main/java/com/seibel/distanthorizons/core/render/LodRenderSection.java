@@ -265,23 +265,10 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 					// get the adjacent positions
 					// needs to be done async to prevent threads waiting on the same positions to be processed
 					final CompletableFuture<ColumnRenderSource>[] adjacentLoadFutures = new CompletableFuture[4];
-					
-					if (Config.Client.Advanced.Graphics.Experimental.onlyLoadCenterLods.get())
-					{
-						// TODO temporary test, long term something else should be done to so we can get adjacent lighting data
-						//  probably a change to the LOD data format
-						adjacentLoadFutures[0] = CompletableFuture.completedFuture(null);
-						adjacentLoadFutures[1] = CompletableFuture.completedFuture(null);
-						adjacentLoadFutures[2] = CompletableFuture.completedFuture(null);
-						adjacentLoadFutures[3] = CompletableFuture.completedFuture(null);
-					}
-					else
-					{
-						adjacentLoadFutures[0] = this.getRenderSourceForPosAsync(this.pos, EDhDirection.NORTH);
-						adjacentLoadFutures[1] = this.getRenderSourceForPosAsync(this.pos, EDhDirection.SOUTH);
-						adjacentLoadFutures[2] = this.getRenderSourceForPosAsync(this.pos, EDhDirection.EAST);
-						adjacentLoadFutures[3] = this.getRenderSourceForPosAsync(this.pos, EDhDirection.WEST);
-					}
+					adjacentLoadFutures[0] = this.getRenderSourceForPosAsync(this.pos, EDhDirection.NORTH);
+					adjacentLoadFutures[1] = this.getRenderSourceForPosAsync(this.pos, EDhDirection.SOUTH);
+					adjacentLoadFutures[2] = this.getRenderSourceForPosAsync(this.pos, EDhDirection.EAST);
+					adjacentLoadFutures[3] = this.getRenderSourceForPosAsync(this.pos, EDhDirection.WEST);
 					
 					return CompletableFuture.allOf(adjacentLoadFutures).thenRun(() ->
 					{

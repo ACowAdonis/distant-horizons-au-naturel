@@ -375,16 +375,6 @@ public class DhClientLevel extends AbstractDhLevel implements IDhClientLevel
 			}
 		}
 
-		// LOD verification service status
-		if (this.lodVerificationService != null)
-		{
-			int pending = this.lodVerificationService.getPendingCount();
-			int inProgress = this.lodVerificationService.getInProgressCount();
-			if (pending > 0 || inProgress > 0)
-			{
-				messageList.add("LOD verification: " + inProgress + " in progress, " + pending + " pending");
-			}
-		}
 	}
 	
 	
