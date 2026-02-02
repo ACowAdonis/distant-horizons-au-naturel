@@ -19,7 +19,6 @@
 
 package com.seibel.distanthorizons.core.file.fullDatafile;
 
-import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGenerationStep;
 import com.seibel.distanthorizons.core.api.internal.SharedApi;
 import com.seibel.distanthorizons.core.config.Config;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
@@ -33,8 +32,6 @@ import com.seibel.distanthorizons.core.generation.tasks.WorldGenResult;
 import com.seibel.distanthorizons.core.level.IDhLevel;
 import com.seibel.distanthorizons.core.logging.DhLogger;
 import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
-import com.seibel.distanthorizons.core.pooling.PhantomArrayListCheckout;
-import com.seibel.distanthorizons.core.pooling.PhantomArrayListPool;
 import com.seibel.distanthorizons.core.pos.DhSectionPos;
 import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D;
 import com.seibel.distanthorizons.core.render.renderer.IDebugRenderable;
@@ -42,7 +39,6 @@ import com.seibel.distanthorizons.core.util.LodUtil;
 import com.seibel.distanthorizons.core.util.math.Vec3f;
 import com.seibel.distanthorizons.core.util.threading.PriorityTaskPicker;
 import com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil;
-import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -55,7 +51,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.stream.IntStream;
 
 public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 implements IDebugRenderable
 {
@@ -322,20 +317,6 @@ public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 im
 	public void clearRetrievalQueue() { this.worldGenQueueRef.set(null); }
 	
 	
-	public boolean isFullyGenerated(ByteArrayList columnGenerationSteps)
-	{
-		return IntStream.range(0, columnGenerationSteps.size())
-				.noneMatch(i ->
-				{
-					byte value = columnGenerationSteps.getByte(i);
-					return value == EDhApiWorldGenerationStep.EMPTY.value
-							|| value == EDhApiWorldGenerationStep.DOWN_SAMPLED.value;
-				});
-	}
-	
-	public static final PhantomArrayListPool ARRAY_LIST_POOL = new PhantomArrayListPool("Generated Provider");
-	
-	
 	@Override
 	public LongArrayList getPositionsToRetrieve(Long pos)
 	{
@@ -344,109 +325,30 @@ public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 im
 		{
 			return null;
 		}
-		
-		
-		// don't check any child positions if this position is already fully generated 
-		if (this.repo.existsWithKey(pos))
+
+		// Check if this position exists AND is complete.
+		// Incomplete sections in the database still need generation.
+		if (this.repo.existsAndIsComplete(pos))
 		{
-			try(PhantomArrayListCheckout checkout = ARRAY_LIST_POOL.checkoutArrays(1, 0, 0))
-			{
-				ByteArrayList columnGenStepArray = checkout.getByteArray(0, FullDataSourceV2.WIDTH*FullDataSourceV2.WIDTH);
-				this.repo.getColumnGenerationStepForPos(pos, columnGenStepArray);
-				if (!columnGenStepArray.isEmpty())
-				{
-					boolean positionFullyGenerated = true;
-					
-					// check if any positions are ungenerated
-					for (int i = 0; i < columnGenStepArray.size(); i++)
-					{
-						if (columnGenStepArray.getByte(i) == EDhApiWorldGenerationStep.EMPTY.value
-							|| columnGenStepArray.getByte(i) == EDhApiWorldGenerationStep.DOWN_SAMPLED.value)
-						{
-							positionFullyGenerated = false;
-							break;
-						}
-					}
-					
-					if (positionFullyGenerated)
-					{
-						return new LongArrayList();
-					}
-				}
-			}
+			return new LongArrayList();
 		}
-		
-		
-		
-		// this section is missing one or more columns, queue the missing ones for generation.
-		// TODO speed up this logic by only checking ungenerated columns
+
+		// This section doesn't exist or is incomplete, queue children for generation.
 		LongArrayList generationList = new LongArrayList();
-		
+
 		byte lowestGeneratorDetailLevel = (byte) Math.min(
-				worldGenQueue.lowestDataDetail()  + DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL,
+				worldGenQueue.lowestDataDetail() + DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL,
 				DhSectionPos.getDetailLevel(pos));
-		
+
 		DhSectionPos.forEachChildAtDetailLevel(pos, lowestGeneratorDetailLevel, (genPos) ->
 		{
-			if (!this.repo.existsWithKey(genPos))
+			// If the position doesn't exist or is incomplete, it needs generation
+			if (!this.repo.existsAndIsComplete(genPos))
 			{
-				// nothing exists for this position, it needs generation
-				generationList.add(genPos);
-			}
-			else
-			{
-				
-				EDhApiWorldGenerationStep currentMinWorldGenStep = EDhApiWorldGenerationStep.LIGHT;
-				try(PhantomArrayListCheckout checkout = ARRAY_LIST_POOL.checkoutArrays(1, 0, 0))
-				{
-					ByteArrayList columnGenerationSteps = checkout.getByteArray(0, FullDataSourceV2.WIDTH*FullDataSourceV2.WIDTH);
-					this.repo.getColumnGenerationStepForPos(genPos, columnGenerationSteps);
-					if (columnGenerationSteps.isEmpty())
-					{
-						// shouldn't happen, but just in case
-						return;
-					}
-					
-					
-					
-					checkWorldGenLoop:
-					for (int x = 0; x < FullDataSourceV2.WIDTH; x++)
-					{
-						for (int z = 0; z < FullDataSourceV2.WIDTH; z++)
-						{
-							int index = FullDataSourceV2.relativePosToIndex(x, z);
-							byte genStepValue = columnGenerationSteps.getByte(index);
-							
-							if (genStepValue < currentMinWorldGenStep.value)
-							{
-								EDhApiWorldGenerationStep newWorldGenStep = EDhApiWorldGenerationStep.fromValue(genStepValue);
-								if (newWorldGenStep != null && newWorldGenStep.value < currentMinWorldGenStep.value)
-								{
-									currentMinWorldGenStep = newWorldGenStep;
-								}
-							}
-							
-							if (currentMinWorldGenStep == EDhApiWorldGenerationStep.EMPTY 
-								|| currentMinWorldGenStep == EDhApiWorldGenerationStep.DOWN_SAMPLED)
-							{
-								// queue the task
-								break checkWorldGenLoop;
-							}
-						}
-					}
-				}
-				
-				if (currentMinWorldGenStep != EDhApiWorldGenerationStep.EMPTY
-					&& currentMinWorldGenStep != EDhApiWorldGenerationStep.DOWN_SAMPLED)
-				{
-					// no world gen needed for this position
-					return;
-				}
-				
 				generationList.add(genPos);
 			}
 		});
-		
+
 		return generationList;
 	}
 	
@@ -493,18 +395,8 @@ public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 im
 		@Override
 		public CompletableFuture<Boolean> shouldGenerateSplitChild(long pos)
 		{
-			return GeneratedFullDataSourceProvider.this.getAsync(pos).thenApply(fullDataSource ->
-			{
-				//noinspection TryFinallyCanBeTryWithResources
-				try
-				{
-					return !GeneratedFullDataSourceProvider.this.isFullyGenerated(fullDataSource.columnGenerationSteps);
-				}
-				finally
-				{
-					fullDataSource.close();
-				}
-			});
+			// Should generate if it doesn't exist or is incomplete.
+			return CompletableFuture.completedFuture(!GeneratedFullDataSourceProvider.this.repo.existsAndIsComplete(pos));
 		}
 		
 	}

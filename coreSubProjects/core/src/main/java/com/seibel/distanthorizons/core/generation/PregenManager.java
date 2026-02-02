@@ -146,25 +146,31 @@ public class PregenManager
 				
 				this.pendingGenerations.put(nextSectionPos, System.currentTimeMillis());
 				this.fullDataSourceProvider.getAsync(nextSectionPos)
-					.thenAccept(fullDataSource -> 
+					.thenAccept(fullDataSource ->
 				{
-					if (this.fullDataSourceProvider.isFullyGenerated(fullDataSource.columnGenerationSteps))
+					// Under the new design, existence in database = complete section.
+					// If we got a non-empty data source, it's fully generated.
+					if (fullDataSource != null && !fullDataSource.isEmpty)
 					{
 						this.pendingGenerations.invalidate(fullDataSource.getPos());
 					}
 					else
 					{
-						this.fullDataSourceProvider.queuePositionForRetrieval(fullDataSource.getPos()).thenAccept(result -> {
+						long posToGenerate = fullDataSource != null ? fullDataSource.getPos() : nextSectionPos;
+						this.fullDataSourceProvider.queuePositionForRetrieval(posToGenerate).thenAccept(result -> {
 							if (!result.success)
 							{
 								LOGGER.warn("Failed to generate section " + DhSectionPos.toString(result.pos));
 							}
-							
+
 							this.pendingGenerations.invalidate(result.pos);
 						});
 					}
-					
-					fullDataSource.close();
+
+					if (fullDataSource != null)
+					{
+						fullDataSource.close();
+					}
 				});
 			}
 		}

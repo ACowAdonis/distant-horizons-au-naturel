@@ -131,7 +131,7 @@ public class DelayedFullDataSourceSaveCache implements AutoCloseable
 				{
 					LOGGER.error("Unable to close datasource ["+ DhSectionPos.toString(removedDataSource.getPos()) +"], error: ["+e.getMessage()+"].", e);
 				}
-				
+
 				return null;
 			});
 	}

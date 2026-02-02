@@ -154,7 +154,7 @@ public class LodVerificationService
 			long relativePos = this.spiralPositions[i];
 			long absolutePos = this.toAbsolutePosition(relativePos);
 
-			if (!this.repo.existsWithKey(absolutePos))
+			if (!this.repo.existsAndIsComplete(absolutePos))
 			{
 				if (this.tryQueueChunksForSection(absolutePos))
 				{

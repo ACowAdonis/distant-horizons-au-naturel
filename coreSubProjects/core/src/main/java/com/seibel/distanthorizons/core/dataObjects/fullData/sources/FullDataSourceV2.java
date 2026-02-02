@@ -83,8 +83,14 @@ public class FullDataSourceV2
 	
 	
 	private int cachedHashCode = 0;
-	
+
 	private final long pos;
+
+	/**
+	 * Tracks how many columns have been populated with data (size > 0).
+	 * When this equals WIDTH * WIDTH (4096), the section is complete.
+	 */
+	private int populatedColumnCount = 0;
 	
 	
 	public final FullDataPointIdMap mapping;
@@ -178,6 +184,10 @@ public class FullDataSourceV2
 			for (int i = 0; i < WIDTH * WIDTH; i++)
 			{
 				this.dataPoints[i].addAll(data[i]);
+				if (data[i] != null && !data[i].isEmpty())
+				{
+					this.populatedColumnCount++;
+				}
 			}
 		}
 		
@@ -468,9 +478,16 @@ public class FullDataSourceV2
 				
 				
 				// copy over the new data
+				boolean wasEmpty = this.dataPoints[index].isEmpty();
 				this.dataPoints[index].clear();
 				this.dataPoints[index].addAll(inputDataArray);
 				this.remapDataColumn(index, remappedIds);
+
+				// track populated column count
+				if (wasEmpty && !this.dataPoints[index].isEmpty())
+				{
+					this.populatedColumnCount++;
+				}
 				
 				if (RUN_DATA_ORDER_VALIDATION)
 				{
@@ -568,16 +585,25 @@ public class FullDataSourceV2
 				}
 				
 				
+				// track populated column count
+				boolean wasEmpty = this.dataPoints[recipientIndex].isEmpty();
+
 				this.dataPoints[recipientIndex] = mergedInputDataArray;
 				this.remapDataColumn(recipientIndex, remappedIds);
-				
+
+				// update counter after replacement
+				if (wasEmpty && !this.dataPoints[recipientIndex].isEmpty())
+				{
+					this.populatedColumnCount++;
+				}
+
 				if (RUN_DATA_ORDER_VALIDATION)
 				{
 					throwIfDataColumnInWrongOrder(inputDataSource.pos, this.dataPoints[recipientIndex]);
 				}
-				
-				
-				
+
+
+
 				if (!dataChanged)
 				{
 					// check if the identical length data column hashes are the same
@@ -588,7 +614,7 @@ public class FullDataSourceV2
 						dataChanged = true;
 					}
 				}
-				
+
 				this.isEmpty = false;
 			}
 		}
@@ -1085,11 +1111,48 @@ public class FullDataSourceV2
 	public long getPos() { return this.pos; }
 	
 	public byte getDataDetailLevel() { return (byte) (DhSectionPos.getDetailLevel(this.pos) - DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL); }
-	
+
+	/**
+	 * Returns true if all 4096 columns have data.
+	 * A complete section is ready to be persisted to the database.
+	 */
+	public boolean isComplete()
+	{
+		return this.populatedColumnCount == WIDTH * WIDTH;
+	}
+
+	/**
+	 * Marks this data source as complete (all 4096 columns populated).
+	 * Should be called after loading data from the database, since
+	 * we only write complete sections to the database.
+	 */
+	public void markAsComplete()
+	{
+		this.populatedColumnCount = WIDTH * WIDTH;
+	}
+
+	/**
+	 * Sets the populated column count directly.
+	 * Used when loading incomplete sections from the database
+	 * where the counter wasn't tracked during data loading.
+	 */
+	public void setPopulatedColumnCount(int count)
+	{
+		this.populatedColumnCount = count;
+	}
+
 	public void setSingleColumn(LongArrayList longArray, int relX, int relZ, EDhApiWorldGenerationStep worldGenStep, EDhApiWorldCompressionMode worldCompressionMode)
 	{
 		int index = relativePosToIndex(relX, relZ);
+
+		// track populated column count
+		boolean wasEmpty = this.dataPoints[index].isEmpty();
 		this.dataPoints[index] = longArray;
+		if (wasEmpty && !this.dataPoints[index].isEmpty())
+		{
+			this.populatedColumnCount++;
+		}
+
 		this.columnGenerationSteps.set(index, worldGenStep.value);
 		this.columnWorldCompressionMode.set(index, worldCompressionMode.value);
 		

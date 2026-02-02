@@ -231,13 +231,18 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 	{
 		this.fullDataSourceProvider().getAsync(pos).thenAccept(fullDataSource ->
 		{
-			if (this.fullDataSourceProvider().isFullyGenerated(fullDataSource.columnGenerationSteps))
+			// Under the new design, existence in database = complete section.
+			// If we got a non-empty data source, it's fully generated.
+			if (fullDataSource != null && !fullDataSource.isEmpty)
 			{
 				requestGroup.fullDataSource = fullDataSource;
 				return;
 			}
-			
-			fullDataSource.close();
+
+			if (fullDataSource != null)
+			{
+				fullDataSource.close();
+			}
 			
 			if (DhSectionPos.getDetailLevel(pos) > (Config.Common.WorldGenerator.distantGeneratorMode.get() == EDhApiDistantGeneratorMode.INTERNAL_SERVER
 					? DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL

@@ -23,7 +23,6 @@ import com.github.luben.zstd.Zstd;
 import com.google.common.base.MoreObjects;
 import com.seibel.distanthorizons.api.enums.config.EDhApiDataCompressionMode;
 import com.seibel.distanthorizons.api.enums.config.EDhApiWorldCompressionMode;
-import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGenerationStep;
 import com.seibel.distanthorizons.core.dataObjects.fullData.FullDataPointIdMap;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
 import com.seibel.distanthorizons.core.enums.EDhDirection;
@@ -73,9 +72,7 @@ public class FullDataSourceV2DTO
 	public ByteArrayList compressedSouthAdjDataByteArray;
 	public ByteArrayList compressedEastAdjDataByteArray;
 	public ByteArrayList compressedWestAdjDataByteArray;
-	
-	/** @see EDhApiWorldGenerationStep */
-	public ByteArrayList compressedColumnGenStepByteArray;
+
 	/** @see EDhApiWorldCompressionMode */
 	public ByteArrayList compressedWorldCompressionModeByteArray;
 	
@@ -90,7 +87,10 @@ public class FullDataSourceV2DTO
 	/** Will be null if we don't want to update this value in the DB */
 	@Nullable
 	public Boolean applyToChildren;
-	
+
+	/** Whether all 4096 columns in the section are populated */
+	public boolean isComplete;
+
 	public long lastModifiedUnixDateTime;
 	public long createdUnixDateTime;
 	
@@ -109,7 +109,6 @@ public class FullDataSourceV2DTO
 		
 		// populate arrays
 		writeDataSourceDataArrayToBlobV2(dataSource.dataPoints, dto.compressedDataByteArray, null, compressionModeEnum);
-		writeGenerationStepsToBlob(dataSource.columnGenerationSteps, dto.compressedColumnGenStepByteArray, compressionModeEnum);
 		writeWorldCompressionModeToBlob(dataSource.columnWorldCompressionMode, dto.compressedWorldCompressionModeByteArray, compressionModeEnum);
 		writeDataMappingToBlob(dataSource.mapping, dto.compressedMappingByteArray, compressionModeEnum);
 		// adjacent full data
@@ -121,7 +120,7 @@ public class FullDataSourceV2DTO
 		// populate individual variables
 		{
 			dto.pos = dataSource.getPos();
-			// the mapping hash isn't included since it takes significantly longer to calculate and 
+			// the mapping hash isn't included since it takes significantly longer to calculate and
 			// as of the time of this comment (2025-1-22) the checksum isn't used for anything so changing it shouldn't cause any issues
 			dto.dataChecksum = dataSource.hashCode();
 			dto.dataFormatVersion = DATA_FORMAT.V2_LATEST;
@@ -130,6 +129,7 @@ public class FullDataSourceV2DTO
 			dto.createdUnixDateTime = dataSource.createdUnixDateTime;
 			dto.applyToParent = dataSource.applyToParent;
 			dto.applyToChildren = dataSource.applyToChildren;
+			dto.isComplete = dataSource.isComplete();
 		}
 		
 		return dto;
@@ -137,21 +137,20 @@ public class FullDataSourceV2DTO
 	
 	/** Should only be used for subsequent decoding */
 	public static FullDataSourceV2DTO CreateEmptyDataSourceForDecoding() { return new FullDataSourceV2DTO(); }
-	private FullDataSourceV2DTO() 
+	private FullDataSourceV2DTO()
 	{
-		super(ARRAY_LIST_POOL, 8, 0, 0);
-		
+		super(ARRAY_LIST_POOL, 7, 0, 0);
+
 		// Expected sizes here are 0 since we don't know how big these arrays need to be,
 		// they depend on compression settings and world complexity.
 		this.compressedDataByteArray = this.pooledArraysCheckout.getByteArray(0, 0);
-		this.compressedColumnGenStepByteArray = this.pooledArraysCheckout.getByteArray(1, 0);
-		this.compressedWorldCompressionModeByteArray = this.pooledArraysCheckout.getByteArray(2, 0);
-		this.compressedMappingByteArray = this.pooledArraysCheckout.getByteArray(3, 0);
-		
-		this.compressedNorthAdjDataByteArray = this.pooledArraysCheckout.getByteArray(4, 0);
-		this.compressedSouthAdjDataByteArray = this.pooledArraysCheckout.getByteArray(5, 0);
-		this.compressedEastAdjDataByteArray = this.pooledArraysCheckout.getByteArray(6, 0);
-		this.compressedWestAdjDataByteArray = this.pooledArraysCheckout.getByteArray(7, 0);
+		this.compressedWorldCompressionModeByteArray = this.pooledArraysCheckout.getByteArray(1, 0);
+		this.compressedMappingByteArray = this.pooledArraysCheckout.getByteArray(2, 0);
+
+		this.compressedNorthAdjDataByteArray = this.pooledArraysCheckout.getByteArray(3, 0);
+		this.compressedSouthAdjDataByteArray = this.pooledArraysCheckout.getByteArray(4, 0);
+		this.compressedEastAdjDataByteArray = this.pooledArraysCheckout.getByteArray(5, 0);
+		this.compressedWestAdjDataByteArray = this.pooledArraysCheckout.getByteArray(6, 0);
 	}
 	
 	
@@ -230,7 +229,6 @@ public class FullDataSourceV2DTO
 		
 		if (direction == null)
 		{
-			readBlobToGenerationSteps(this.compressedColumnGenStepByteArray, dataSource.columnGenerationSteps, compressionModeEnum);
 			readBlobToWorldCompressionMode(this.compressedWorldCompressionModeByteArray, dataSource.columnWorldCompressionMode, compressionModeEnum);
 
 			// doesn't include adjacent (ie edge) data
@@ -275,11 +273,31 @@ public class FullDataSourceV2DTO
 		
 		
 		// individual properties //
-		
+
 		dataSource.lastModifiedUnixDateTime = this.lastModifiedUnixDateTime;
 		dataSource.createdUnixDateTime = this.createdUnixDateTime;
-		
+
 		dataSource.isEmpty = false;
+
+		// Restore completion status from database
+		if (this.isComplete)
+		{
+			dataSource.markAsComplete();
+		}
+		else
+		{
+			// Count actual populated columns for incomplete sections
+			// since the counter wasn't tracked during blob loading
+			int populatedCount = 0;
+			for (int i = 0; i < FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH; i++)
+			{
+				if (!dataSource.dataPoints[i].isEmpty())
+				{
+					populatedCount++;
+				}
+			}
+			dataSource.setPopulatedColumnCount(populatedCount);
+		}
 		
 		if (this.applyToParent != null)
 		{
@@ -589,29 +607,6 @@ public class FullDataSourceV2DTO
 	}
 	
 	
-	private static void writeGenerationStepsToBlob(ByteArrayList inputColumnGenStepByteArray, ByteArrayList outputByteArray, EDhApiDataCompressionMode compressionModeEnum) throws IOException
-	{
-		try (DhDataOutputStream compressedOut = DhDataOutputStream.create(compressionModeEnum, outputByteArray))
-		{
-			for (int i = 0; i < inputColumnGenStepByteArray.size(); i++)
-			{
-				compressedOut.writeByte(inputColumnGenStepByteArray.getByte(i));
-			}
-		}
-	}
-	private static void readBlobToGenerationSteps(ByteArrayList inputCompressedDataByteArray, ByteArrayList outputByteArray, EDhApiDataCompressionMode compressionModeEnum) throws IOException, DataCorruptedException
-	{
-		try(DhDataInputStream compressedIn = DhDataInputStream.create(inputCompressedDataByteArray, compressionModeEnum))
-		{
-			compressedIn.readFully(outputByteArray.elements(), 0, FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH);
-		}
-		catch (EOFException e)
-		{
-			throw new DataCorruptedException(e);
-		}
-	}
-	
-	
 	private static void writeWorldCompressionModeToBlob(ByteArrayList inputWorldCompressionModeByteArray, ByteArrayList outputByteArray, EDhApiDataCompressionMode compressionModeEnum) throws IOException
 	{
 		try (DhDataOutputStream compressedOut = DhDataOutputStream.create(compressionModeEnum, outputByteArray))
@@ -677,9 +672,7 @@ public class FullDataSourceV2DTO
 		out.writeInt(this.compressedWestAdjDataByteArray.size());
 		out.writeBytes(this.compressedWestAdjDataByteArray.elements(), 0, this.compressedWestAdjDataByteArray.size());
 		
-		// world gen
-		out.writeInt(this.compressedColumnGenStepByteArray.size());
-		out.writeBytes(this.compressedColumnGenStepByteArray.elements(), 0, this.compressedColumnGenStepByteArray.size());
+		// world compression
 		out.writeInt(this.compressedWorldCompressionModeByteArray.size());
 		out.writeBytes(this.compressedWorldCompressionModeByteArray.elements(), 0, this.compressedWorldCompressionModeByteArray.size());
 		
@@ -717,9 +710,7 @@ public class FullDataSourceV2DTO
 		this.compressedWestAdjDataByteArray.size(in.readInt());
 		in.readBytes(this.compressedWestAdjDataByteArray.elements(), 0, this.compressedWestAdjDataByteArray.size());
 		
-		// world gen
-		this.compressedColumnGenStepByteArray.size(in.readInt());
-		in.readBytes(this.compressedColumnGenStepByteArray.elements(), 0, this.compressedColumnGenStepByteArray.size());
+		// world compression
 		this.compressedWorldCompressionModeByteArray.size(in.readInt());
 		in.readBytes(this.compressedWorldCompressionModeByteArray.elements(), 0, this.compressedWorldCompressionModeByteArray.size());
 		
@@ -755,7 +746,6 @@ public class FullDataSourceV2DTO
 				.add("pos", DhSectionPos.toString(this.pos))
 				.add("dataChecksum", this.dataChecksum)
 				.add("compressedDataByteArray length", this.compressedDataByteArray.size())
-				.add("compressedColumnGenStepByteArray length", this.compressedColumnGenStepByteArray.size())
 				.add("compressedWorldCompressionModeByteArray length", this.compressedWorldCompressionModeByteArray.size())
 				.add("compressedMappingByteArray length", this.compressedMappingByteArray.size())
 				.add("dataFormatVersion", this.dataFormatVersion)
