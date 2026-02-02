@@ -58,7 +58,6 @@ public class FullDataSourceV2DTO
 	
 	public static class DATA_FORMAT
 	{
-		public static final int V1_NO_ADJACENT_DATA = 1;
 		public static final int V2_LATEST = 2;
 	}
 	
@@ -196,17 +195,10 @@ public class FullDataSourceV2DTO
 			boolean unitTest) throws IOException, InterruptedException, DataCorruptedException
 	{
 		// format validation //
-		
-		if (this.dataFormatVersion != DATA_FORMAT.V1_NO_ADJACENT_DATA 
-			&& this.dataFormatVersion != DATA_FORMAT.V2_LATEST)
+
+		if (this.dataFormatVersion != DATA_FORMAT.V2_LATEST)
 		{
-			throw new IllegalStateException("Data source population only supports formats: ["+DATA_FORMAT.V1_NO_ADJACENT_DATA +","+DATA_FORMAT.V2_LATEST +"], data format found: ["+this.dataFormatVersion+"].");
-		}
-		
-		if (direction != null
-			&& this.dataFormatVersion == DATA_FORMAT.V1_NO_ADJACENT_DATA)
-		{
-			throw new IllegalStateException("Data format ["+this.dataFormatVersion+"] doesn't support adjacent data. Automatic conversion must be done.");
+			throw new IllegalStateException("Data source population only supports format V2, data format found: ["+this.dataFormatVersion+"].");
 		}
 		
 		
@@ -240,21 +232,14 @@ public class FullDataSourceV2DTO
 		{
 			readBlobToGenerationSteps(this.compressedColumnGenStepByteArray, dataSource.columnGenerationSteps, compressionModeEnum);
 			readBlobToWorldCompressionMode(this.compressedWorldCompressionModeByteArray, dataSource.columnWorldCompressionMode, compressionModeEnum);
-			
-			if (this.dataFormatVersion == 1)
-			{
-				readBlobToDataSourceDataArrayV1(this.compressedDataByteArray, dataSource.dataPoints, compressionModeEnum);
-			}
-			else
-			{
-				// doesn't include adjacent (ie edge) data
-				readBlobToDataSourceDataArrayV2(this.compressedDataByteArray, dataSource.dataPoints, null, compressionModeEnum);
-				
-				readBlobToDataSourceDataArrayV2(this.compressedNorthAdjDataByteArray, dataSource.dataPoints, EDhDirection.NORTH, compressionModeEnum);
-				readBlobToDataSourceDataArrayV2(this.compressedSouthAdjDataByteArray, dataSource.dataPoints, EDhDirection.SOUTH, compressionModeEnum);
-				readBlobToDataSourceDataArrayV2(this.compressedEastAdjDataByteArray, dataSource.dataPoints, EDhDirection.EAST, compressionModeEnum);
-				readBlobToDataSourceDataArrayV2(this.compressedWestAdjDataByteArray, dataSource.dataPoints, EDhDirection.WEST, compressionModeEnum);
-			}
+
+			// doesn't include adjacent (ie edge) data
+			readBlobToDataSourceDataArrayV2(this.compressedDataByteArray, dataSource.dataPoints, null, compressionModeEnum);
+
+			readBlobToDataSourceDataArrayV2(this.compressedNorthAdjDataByteArray, dataSource.dataPoints, EDhDirection.NORTH, compressionModeEnum);
+			readBlobToDataSourceDataArrayV2(this.compressedSouthAdjDataByteArray, dataSource.dataPoints, EDhDirection.SOUTH, compressionModeEnum);
+			readBlobToDataSourceDataArrayV2(this.compressedEastAdjDataByteArray, dataSource.dataPoints, EDhDirection.EAST, compressionModeEnum);
+			readBlobToDataSourceDataArrayV2(this.compressedWestAdjDataByteArray, dataSource.dataPoints, EDhDirection.WEST, compressionModeEnum);
 		}
 		else
 		{
@@ -313,66 +298,6 @@ public class FullDataSourceV2DTO
 	//=================//
 	// (de)serializing //
 	//=================//
-	
-	public static void writeDataSourceDataArrayToBlobV1(
-			LongArrayList[] inputDataArray, ByteArrayList outputByteArray, 
-			EDhApiDataCompressionMode compressionModeEnum) throws IOException
-	{
-		try (DhDataOutputStream compressedOut = DhDataOutputStream.create(compressionModeEnum, outputByteArray))
-		{
-			// write the data
-			int dataArrayLength = FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH;
-			for (int xz = 0; xz < dataArrayLength; xz++)
-			{
-				LongArrayList dataColumn = inputDataArray[xz];
-				
-				// write column length
-				short columnLength = (dataColumn != null) ? (short) dataColumn.size() : 0;
-				// a short is used instead of an int because at most we store 4096 vertical slices and a 
-				// short fits that with less wasted spaces vs an int (short has max value of 32,767 vs int's max of 2 billion)
-				compressedOut.writeShort(columnLength);
-				
-				// write column data (will be skipped if no data was present)
-				for (int y = 0; y < columnLength; y++)
-				{
-					compressedOut.writeLong(dataColumn.getLong(y));
-				}
-			}
-		}
-	}
-	private static void readBlobToDataSourceDataArrayV1(
-			ByteArrayList inputCompressedDataByteArray, LongArrayList[] outputDataLongArray, 
-			EDhApiDataCompressionMode compressionModeEnum) throws IOException, DataCorruptedException
-	{
-		try (DhDataInputStream compressedIn = DhDataInputStream.create(inputCompressedDataByteArray, compressionModeEnum))
-		{
-			// read the data
-			int dataArrayLength = FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH;
-			for (int xz = 0; xz < dataArrayLength; xz++)
-			{
-				// read the column length
-				short dataColumnLength = compressedIn.readShort(); // separate variables are used for debugging and in case validation wants to be added later 
-				if (dataColumnLength < 0)
-				{
-					throw new DataCorruptedException("Read DataSource Blob data at index [" + xz + "], column length [" + dataColumnLength + "] should be greater than zero.");
-				}
-				
-				LongArrayList dataColumn = outputDataLongArray[xz];
-				ListUtil.clearAndSetSize(dataColumn, dataColumnLength);
-				
-				// read column data (will be skipped if no data was present)
-				for (int y = 0; y < dataColumnLength; y++)
-				{
-					long dataPoint = compressedIn.readLong();
-					if (VALIDATE_INPUT_DATAPOINTS)
-					{
-						FullDataPointUtil.validateDatapoint(dataPoint);
-					}
-					dataColumn.set(y, dataPoint);
-				}
-			}
-		}
-	}
 	
 	private static void writeDataSourceDataArrayToBlobV2(
 			LongArrayList[] inputDataArray, ByteArrayList outputByteArray,

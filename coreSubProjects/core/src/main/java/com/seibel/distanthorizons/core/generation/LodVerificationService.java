@@ -72,7 +72,8 @@ public class LodVerificationService
 	private static final int MAX_ATTEMPTS_BEFORE_GIVE_UP = 10;   // Stop retrying after this many attempts
 
 	// Scan configuration
-	private static final int POSITIONS_PER_TICK = 4;             // How many positions to check per tick
+	private static final int POSITIONS_PER_SCAN = 256;           // How many positions to check per scan cycle
+	private static final long SCAN_INTERVAL_MS = 5_000;          // How often to run a scan cycle (5 seconds)
 	private static final int SCAN_RADIUS_SECTIONS = 32;          // Radius in sections to scan (covers ~2km at detail level 6)
 
 
@@ -102,6 +103,9 @@ public class LodVerificationService
 
 	/** Detail level to scan at (block-level sections) */
 	private final byte scanDetailLevel;
+
+	/** Last time a scan cycle was run */
+	private volatile long lastScanTime = 0;
 
 
 
@@ -139,6 +143,14 @@ public class LodVerificationService
 		{
 			return false;
 		}
+
+		// Check if enough time has passed since last scan
+		long now = System.currentTimeMillis();
+		if (now - this.lastScanTime < SCAN_INTERVAL_MS)
+		{
+			return false;
+		}
+		this.lastScanTime = now;
 
 		// Update player position for spiral center
 		DhBlockPos playerPos = MC_CLIENT.getPlayerBlockPos();
@@ -269,7 +281,7 @@ public class LodVerificationService
 		}
 
 		int startIndex = this.currentSpiralIndex.get();
-		int endIndex = Math.min(startIndex + POSITIONS_PER_TICK, this.spiralPositions.length);
+		int endIndex = Math.min(startIndex + POSITIONS_PER_SCAN, this.spiralPositions.length);
 
 		boolean didWork = false;
 
