@@ -88,17 +88,13 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		//======================//
 		// get statement values //
 		//======================//
-		
+
 		byte detailLevel = resultSet.getByte("DetailLevel");
 		byte sectionDetailLevel = (byte) (detailLevel + DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL);
 		int posX = resultSet.getInt("PosX");
 		int posZ = resultSet.getInt("PosZ");
 		long pos = DhSectionPos.encode(sectionDetailLevel, posX, posZ);
-		
-		int dataChecksum = resultSet.getInt("DataChecksum");
-		
-		
-		byte dataFormatVersion = resultSet.getByte("DataFormatVersion");
+
 		byte compressionModeValue = resultSet.getByte("CompressionMode");
 
 		// while these values can be null in the DB, null would just equate to false
@@ -120,7 +116,7 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		dto.compressedDataByteArray = putAllBytes(resultSet.getBinaryStream("Data"), dto.compressedDataByteArray);
 		dto.compressedWorldCompressionModeByteArray = putAllBytes(resultSet.getBinaryStream("ColumnWorldCompressionMode"), dto.compressedWorldCompressionModeByteArray);
 		dto.compressedMappingByteArray = putAllBytes(resultSet.getBinaryStream("Mapping"), dto.compressedMappingByteArray);
-		
+
 		// adjacent full data
 		if (includeAdjacent)
 		{
@@ -129,12 +125,10 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 			dto.compressedEastAdjDataByteArray = putAllBytes(resultSet.getBinaryStream("EastAdjData"), dto.compressedEastAdjDataByteArray);
 			dto.compressedWestAdjDataByteArray = putAllBytes(resultSet.getBinaryStream("WestAdjData"), dto.compressedWestAdjDataByteArray);
 		}
-		
+
 		// set individual variables
 		{
 			dto.pos = pos;
-			dto.dataChecksum = dataChecksum;
-			dto.dataFormatVersion = dataFormatVersion;
 			dto.compressionModeValue = compressionModeValue;
 			dto.lastModifiedUnixDateTime = lastModifiedUnixDateTime;
 			dto.createdUnixDateTime = createdUnixDateTime;
@@ -150,36 +144,30 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		//======================//
 		// get statement values //
 		//======================//
-		
-		int dataChecksum = resultSet.getInt("DataChecksum");
-		
-		
-		byte dataFormatVersion = resultSet.getByte("DataFormatVersion");
+
 		byte compressionModeValue = resultSet.getByte("CompressionMode");
-		
+
 		// while these values can be null in the DB, null would just equate to false
 		boolean applyToParent = (resultSet.getInt("ApplyToParent")) == 1;
 
 		long lastModifiedUnixDateTime = resultSet.getLong("LastModifiedUnixDateTime");
 		long createdUnixDateTime = resultSet.getLong("CreatedUnixDateTime");
-		
-		
-		
+
+
+
 		//===================//
 		// set DTO variables //
 		//===================//
-		
+
 		FullDataSourceV2DTO dto = FullDataSourceV2DTO.CreateEmptyDataSourceForDecoding();
 		// set pooled arrays
 		dto.compressedDataByteArray = putAllBytes(resultSet.getBinaryStream("AdjData"), dto.compressedDataByteArray);
 		dto.compressedWorldCompressionModeByteArray = putAllBytes(resultSet.getBinaryStream("ColumnWorldCompressionMode"), dto.compressedWorldCompressionModeByteArray);
 		dto.compressedMappingByteArray = putAllBytes(resultSet.getBinaryStream("Mapping"), dto.compressedMappingByteArray);
-		
+
 		// set individual variables
 		{
 			dto.pos = pos;
-			dto.dataChecksum = dataChecksum;
-			dto.dataFormatVersion = dataFormatVersion;
 			dto.compressionModeValue = compressionModeValue;
 			dto.lastModifiedUnixDateTime = lastModifiedUnixDateTime;
 			dto.createdUnixDateTime = createdUnixDateTime;
@@ -197,21 +185,18 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 	private final String upsertSqlTemplate =
 		"INSERT INTO "+this.getTableName() + " (\n" +
 		"   DetailLevel, PosX, PosZ, \n" +
-		"   MinY, DataChecksum, \n" +
 		"   Data, ColumnWorldCompressionMode, Mapping, \n" +
 		"   NorthAdjData, SouthAdjData, EastAdjData, WestAdjData, \n" +
-		"   DataFormatVersion, CompressionMode, ApplyToParent, IsComplete, \n" +
+		"   CompressionMode, ApplyToParent, IsComplete, \n" +
 		"   LastModifiedUnixDateTime, CreatedUnixDateTime) \n" +
 		"VALUES( \n" +
 		"    ?, ?, ?, \n" +
-		"    ?, ?, \n" +
 		"    ?, ?, ?, \n" +
 		"    ?, ?, ?, ?, \n" +
-		"    ?, ?, ?, ?, \n" +
+		"    ?, ?, ?, \n" +
 		"    ?, ? \n" +
 		") \n" +
 		"ON CONFLICT(DetailLevel, PosX, PosZ) DO UPDATE SET \n" +
-		"   DataChecksum = excluded.DataChecksum, \n" +
 		"   Data = excluded.Data, \n" +
 		"   ColumnWorldCompressionMode = excluded.ColumnWorldCompressionMode, \n" +
 		"   Mapping = excluded.Mapping, \n" +
@@ -219,7 +204,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		"   SouthAdjData = excluded.SouthAdjData, \n" +
 		"   EastAdjData = excluded.EastAdjData, \n" +
 		"   WestAdjData = excluded.WestAdjData, \n" +
-		"   DataFormatVersion = excluded.DataFormatVersion, \n" +
 		"   CompressionMode = excluded.CompressionMode, \n" +
 		"   ApplyToParent = COALESCE(excluded.ApplyToParent, ApplyToParent), \n" +
 		"   IsComplete = excluded.IsComplete, \n" +
@@ -228,17 +212,15 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 	private final String insertSqlTemplate =
 		"INSERT INTO "+this.getTableName() + " (\n" +
 		"   DetailLevel, PosX, PosZ, \n" +
-		"   MinY, DataChecksum, \n" +
 		"   Data, ColumnWorldCompressionMode, Mapping, \n" +
 		"   NorthAdjData, SouthAdjData, EastAdjData, WestAdjData, \n" +
-		"   DataFormatVersion, CompressionMode, ApplyToParent, IsComplete, \n" +
+		"   CompressionMode, ApplyToParent, IsComplete, \n" +
 		"   LastModifiedUnixDateTime, CreatedUnixDateTime) \n" +
 		"VALUES( \n" +
 		"    ?, ?, ?, \n" +
-		"    ?, ?, \n" +
 		"    ?, ?, ?, \n" +
 		"    ?, ?, ?, ?, \n" +
-		"    ?, ?, ?, ?, \n" +
+		"    ?, ?, ?, \n" +
 		"    ?, ? \n" +
 		");";
 	@Override
@@ -249,18 +231,11 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		{
 			return null;
 		}
-		
-		
+
 		int i = 1;
 		statement.setInt(i++, DhSectionPos.getDetailLevel(dto.pos) - DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL);
 		statement.setInt(i++, DhSectionPos.getX(dto.pos));
 		statement.setInt(i++, DhSectionPos.getZ(dto.pos));
-		
-		statement.setInt(i++, 0); // deprecated MinY column
-		// MinY is deprecated due to a bug introduced sometime before 2.3.6 where was always set to "0"
-		// and due to being unused wasn't noticed until 2.3.7-dev (2025-11-15)
-		
-		statement.setInt(i++, dto.dataChecksum);
 
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedDataByteArray.elements()), dto.compressedDataByteArray.size());
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedWorldCompressionModeByteArray.elements()), dto.compressedWorldCompressionModeByteArray.size());
@@ -271,7 +246,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedEastAdjDataByteArray.elements()), dto.compressedEastAdjDataByteArray.size());
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedWestAdjDataByteArray.elements()), dto.compressedWestAdjDataByteArray.size());
 
-		statement.setByte(i++, dto.dataFormatVersion);
 		statement.setByte(i++, dto.compressionModeValue);
 		// if nothing is present assume we don't need/want to propagate updates
 		statement.setBoolean(i++, BoolUtil.falseIfNull(dto.applyToParent));
@@ -292,14 +266,11 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		String updateSqlTemplate = (
 				"UPDATE "+this.getTableName()+" \n" +
 				"SET \n" +
-				"   DataChecksum = ? \n" +
-
-				"   ,Data = ? \n" +
+				"   Data = ? \n" +
 				"   ,ColumnWorldCompressionMode = ? \n" +
 				"   ,Mapping = ? \n" +
 				"   ,NorthAdjData = ?, SouthAdjData = ?, EastAdjData = ?, WestAdjData = ? \n" +
 
-				"   ,DataFormatVersion = ? \n" +
 				"   ,CompressionMode = ? \n" +
 					// only update this value if it's present
 					(dto.applyToParent != null ? "   ,ApplyToParent = ? \n" : "" ) +
@@ -321,8 +292,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 
 
 		int i = 1;
-		statement.setInt(i++, dto.dataChecksum);
-
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedDataByteArray.elements()), dto.compressedDataByteArray.size());
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedWorldCompressionModeByteArray.elements()), dto.compressedWorldCompressionModeByteArray.size());
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedMappingByteArray.elements()), dto.compressedMappingByteArray.size());
@@ -331,9 +300,8 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedSouthAdjDataByteArray.elements()), dto.compressedSouthAdjDataByteArray.size());
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedEastAdjDataByteArray.elements()), dto.compressedEastAdjDataByteArray.size());
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedWestAdjDataByteArray.elements()), dto.compressedWestAdjDataByteArray.size());
-		
-		
-		statement.setByte(i++, dto.dataFormatVersion);
+
+
 		statement.setByte(i++, dto.compressionModeValue);
 		if (dto.applyToParent != null)
 		{
@@ -389,9 +357,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		statement.setInt(i++, DhSectionPos.getX(dto.pos));
 		statement.setInt(i++, DhSectionPos.getZ(dto.pos));
 
-		statement.setInt(i++, 0); // deprecated MinY column
-		statement.setInt(i++, dto.dataChecksum);
-
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedDataByteArray.elements()), dto.compressedDataByteArray.size());
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedWorldCompressionModeByteArray.elements()), dto.compressedWorldCompressionModeByteArray.size());
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedMappingByteArray.elements()), dto.compressedMappingByteArray.size());
@@ -401,7 +366,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedEastAdjDataByteArray.elements()), dto.compressedEastAdjDataByteArray.size());
 		statement.setBinaryStream(i++, new ByteArrayInputStream(dto.compressedWestAdjDataByteArray.elements()), dto.compressedWestAdjDataByteArray.size());
 
-		statement.setByte(i++, dto.dataFormatVersion);
 		statement.setByte(i++, dto.compressionModeValue);
 
 		// For UPSERT with COALESCE: null means "keep existing value", false/true means "set this value"
@@ -431,9 +395,8 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 	
 	private final String getAdjForDirectionSqlTemplate =
 			"SELECT \n" +
-					"   DataChecksum, \n" +
 					"   ColumnWorldCompressionMode, Mapping, \n" +
-					"   DataFormatVersion, CompressionMode, ApplyToParent, \n" +
+					"   CompressionMode, ApplyToParent, \n" +
 					"   LastModifiedUnixDateTime, CreatedUnixDateTime, \n" +
 					"   DIRECTION_ENUM as AdjData \n" +
 					"FROM "+this.getTableName() + "\n" +

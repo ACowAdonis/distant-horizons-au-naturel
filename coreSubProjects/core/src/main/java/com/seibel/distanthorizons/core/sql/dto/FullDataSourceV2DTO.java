@@ -49,24 +49,16 @@ import org.jetbrains.annotations.Nullable;
 import java.io.*;
 
 /** handles storing {@link FullDataSourceV2}'s in the database. */
-public class FullDataSourceV2DTO 
+public class FullDataSourceV2DTO
 		extends AbstractPhantomArrayList
 		implements IBaseDTO<Long>, INetworkObject, AutoCloseable
 {
 	public static final boolean VALIDATE_INPUT_DATAPOINTS = true;
-	
-	public static class DATA_FORMAT
-	{
-		public static final int V2_LATEST = 2;
-	}
-	
-	
-	
+
+
+
 	public long pos;
-	
-	/** only for the data array */
-	public int dataChecksum;
-	
+
 	public ByteArrayList compressedDataByteArray;
 	public ByteArrayList compressedNorthAdjDataByteArray;
 	public ByteArrayList compressedSouthAdjDataByteArray;
@@ -77,8 +69,7 @@ public class FullDataSourceV2DTO
 	public ByteArrayList compressedWorldCompressionModeByteArray;
 	
 	public ByteArrayList compressedMappingByteArray;
-	
-	public byte dataFormatVersion;
+
 	public byte compressionModeValue;
 	
 	/** Will be null if we don't want to update this value in the DB */
@@ -117,10 +108,6 @@ public class FullDataSourceV2DTO
 		// populate individual variables
 		{
 			dto.pos = dataSource.getPos();
-			// the mapping hash isn't included since it takes significantly longer to calculate and
-			// as of the time of this comment (2025-1-22) the checksum isn't used for anything so changing it shouldn't cause any issues
-			dto.dataChecksum = dataSource.hashCode();
-			dto.dataFormatVersion = DATA_FORMAT.V2_LATEST;
 			dto.compressionModeValue = compressionModeEnum.value;
 			dto.lastModifiedUnixDateTime = dataSource.lastModifiedUnixDateTime;
 			dto.createdUnixDateTime = dataSource.createdUnixDateTime;
@@ -189,15 +176,6 @@ public class FullDataSourceV2DTO
 			@Nullable EDhDirection direction,
 			boolean unitTest) throws IOException, InterruptedException, DataCorruptedException
 	{
-		// format validation //
-
-		if (this.dataFormatVersion != DATA_FORMAT.V2_LATEST)
-		{
-			throw new IllegalStateException("Data source population only supports format V2, data format found: ["+this.dataFormatVersion+"].");
-		}
-		
-		
-		
 		// compression //
 		
 		EDhApiDataCompressionMode compressionModeEnum;
@@ -648,12 +626,11 @@ public class FullDataSourceV2DTO
 	public void encode(ByteBuf out)
 	{
 		out.writeLong(this.pos);
-		out.writeInt(this.dataChecksum);
-		
+
 		// data
 		out.writeInt(this.compressedDataByteArray.size());
 		out.writeBytes(this.compressedDataByteArray.elements(), 0, this.compressedDataByteArray.size());
-		
+
 		// adj data
 		out.writeInt(this.compressedNorthAdjDataByteArray.size());
 		out.writeBytes(this.compressedNorthAdjDataByteArray.elements(), 0, this.compressedNorthAdjDataByteArray.size());
@@ -663,18 +640,17 @@ public class FullDataSourceV2DTO
 		out.writeBytes(this.compressedEastAdjDataByteArray.elements(), 0, this.compressedEastAdjDataByteArray.size());
 		out.writeInt(this.compressedWestAdjDataByteArray.size());
 		out.writeBytes(this.compressedWestAdjDataByteArray.elements(), 0, this.compressedWestAdjDataByteArray.size());
-		
+
 		// world compression
 		out.writeInt(this.compressedWorldCompressionModeByteArray.size());
 		out.writeBytes(this.compressedWorldCompressionModeByteArray.elements(), 0, this.compressedWorldCompressionModeByteArray.size());
-		
-		// compression type
+
+		// mapping
 		out.writeInt(this.compressedMappingByteArray.size());
 		out.writeBytes(this.compressedMappingByteArray.elements(), 0, this.compressedMappingByteArray.size());
-		
-		out.writeByte(this.dataFormatVersion);
+
 		out.writeByte(this.compressionModeValue);
-		
+
 		out.writeBoolean(BoolUtil.falseIfNull(this.applyToParent));
 
 		out.writeLong(this.lastModifiedUnixDateTime);
@@ -685,12 +661,11 @@ public class FullDataSourceV2DTO
 	public void decode(ByteBuf in)
 	{
 		this.pos = in.readLong();
-		this.dataChecksum = in.readInt();
-		
+
 		// data
 		this.compressedDataByteArray.size(in.readInt());
 		in.readBytes(this.compressedDataByteArray.elements(), 0, this.compressedDataByteArray.size());
-		
+
 		// adj data
 		this.compressedNorthAdjDataByteArray.size(in.readInt());
 		in.readBytes(this.compressedNorthAdjDataByteArray.elements(), 0, this.compressedNorthAdjDataByteArray.size());
@@ -700,18 +675,17 @@ public class FullDataSourceV2DTO
 		in.readBytes(this.compressedEastAdjDataByteArray.elements(), 0, this.compressedEastAdjDataByteArray.size());
 		this.compressedWestAdjDataByteArray.size(in.readInt());
 		in.readBytes(this.compressedWestAdjDataByteArray.elements(), 0, this.compressedWestAdjDataByteArray.size());
-		
+
 		// world compression
 		this.compressedWorldCompressionModeByteArray.size(in.readInt());
 		in.readBytes(this.compressedWorldCompressionModeByteArray.elements(), 0, this.compressedWorldCompressionModeByteArray.size());
-		
-		// compression type
+
+		// mapping
 		this.compressedMappingByteArray.size(in.readInt());
 		in.readBytes(this.compressedMappingByteArray.elements(), 0, this.compressedMappingByteArray.size());
-		
-		this.dataFormatVersion = in.readByte();
+
 		this.compressionModeValue = in.readByte();
-		
+
 		this.applyToParent = in.readBoolean();
 
 		this.lastModifiedUnixDateTime = in.readLong();
@@ -734,11 +708,9 @@ public class FullDataSourceV2DTO
 	{
 		return MoreObjects.toStringHelper(this)
 				.add("pos", DhSectionPos.toString(this.pos))
-				.add("dataChecksum", this.dataChecksum)
 				.add("compressedDataByteArray length", this.compressedDataByteArray.size())
 				.add("compressedWorldCompressionModeByteArray length", this.compressedWorldCompressionModeByteArray.size())
 				.add("compressedMappingByteArray length", this.compressedMappingByteArray.size())
-				.add("dataFormatVersion", this.dataFormatVersion)
 				.add("compressionModeValue", this.compressionModeValue)
 				.add("applyToParent", this.applyToParent)
 				.add("lastModifiedUnixDateTime", this.lastModifiedUnixDateTime)

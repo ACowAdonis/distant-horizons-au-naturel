@@ -21,7 +21,6 @@ package tests;
 
 import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
 import com.seibel.distanthorizons.core.pos.DhChunkPos;
-import com.seibel.distanthorizons.core.sql.DatabaseUpdater;
 import com.seibel.distanthorizons.core.sql.repo.AbstractDhRepo;
 import com.seibel.distanthorizons.core.sql.repo.phantoms.AutoClosableTrackingWrapper;
 import com.seibel.distanthorizons.core.logging.DhLogger;
@@ -74,25 +73,24 @@ public class DhRepoSqliteTest
 			
 			
 			
-			//==========================//
-			// Auto update script tests //
-			//==========================//
-			
-			// check that the schema table is created
+			//============================//
+			// Schema initialization test //
+			//============================//
+
+			// check that the test table is created
 			try(PreparedStatement statement = primaryKeyRepo.createPreparedStatement(
-					"SELECT name FROM sqlite_master WHERE type='table' AND name='"+DatabaseUpdater.SCHEMA_TABLE_NAME+"';");
-				ResultSet autoUpdateTablePresentResult = primaryKeyRepo.query(statement))
+					"SELECT name FROM sqlite_master WHERE type='table' AND name='Test';");
+				ResultSet tableExistsResult = primaryKeyRepo.query(statement))
 			{
-				if (autoUpdateTablePresentResult == null
-						|| !autoUpdateTablePresentResult.next()
-						|| autoUpdateTablePresentResult.getString("name") == null)
+				if (tableExistsResult == null
+						|| !tableExistsResult.next()
+						|| tableExistsResult.getString("name") == null)
 				{
-					Assert.fail("Auto DB update table missing.");
+					Assert.fail("Test table missing.");
 				}
 			}
-			
-			
-			// check that the update scripts aren't run multiple times
+
+			// check that creating multiple repos doesn't cause issues
 			TestPrimaryKeyRepo altDataRepoOne = new TestPrimaryKeyRepo(DATABASE_TYPE, new File(DB_FILE_NAME));
 			TestPrimaryKeyRepo altDataRepoTwo = new TestPrimaryKeyRepo(DATABASE_TYPE, new File(DB_FILE_NAME));
 			
