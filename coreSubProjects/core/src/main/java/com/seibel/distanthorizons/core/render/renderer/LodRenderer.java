@@ -108,6 +108,9 @@ public class LodRenderer
 	private final Mat4f cachedModelViewMatrix = new Mat4f();
 	private final Mat4f cachedCombinedMatrix = new Mat4f();
 
+	// Cached array to avoid per-frame allocation in setGLState
+	private final float[] clearColorValues = new float[4];
+
 
 
 	//=============//
@@ -473,10 +476,9 @@ public class LodRenderer
 		if (clearTextures)
 		{
 			GL32.glClearDepth(1.0);
-			
-			float[] clearColorValues = new float[4];
-			GL32.glGetFloatv(GL32.GL_COLOR_CLEAR_VALUE, clearColorValues);
-			GL32.glClearColor(clearColorValues[0], clearColorValues[1], clearColorValues[2], 1.0f);
+
+			GL32.glGetFloatv(GL32.GL_COLOR_CLEAR_VALUE, this.clearColorValues);
+			GL32.glClearColor(this.clearColorValues[0], this.clearColorValues[1], this.clearColorValues[2], 1.0f);
 			
 			if (this.usingMcFramebuffer && framebufferOverride == null)
 			{
