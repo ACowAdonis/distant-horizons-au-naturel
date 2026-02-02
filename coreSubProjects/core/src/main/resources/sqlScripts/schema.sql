@@ -29,6 +29,14 @@ WHERE ApplyToParent = 1
 
 --batch--
 
+CREATE INDEX IF NOT EXISTS idx_detail_complete ON FullData(DetailLevel, PosX, PosZ, IsComplete)
+
+--batch--
+
+CREATE INDEX IF NOT EXISTS idx_timestamp_range ON FullData(DetailLevel, PosX, PosZ, LastModifiedUnixDateTime)
+
+--batch--
+
 CREATE TABLE IF NOT EXISTS ChunkHash (
     ChunkPosX INT NOT NULL,
     ChunkPosZ INT NOT NULL,

@@ -48,8 +48,8 @@ public abstract class AbstractDhRepo<TKey, TDTO extends IBaseDTO<TKey>> implemen
 	private static final DhLogger LOGGER = new DhLoggerBuilder().build();
 
 	public static final String DEFAULT_DATABASE_TYPE = "jdbc:sqlite";
-	/** a value of 0 means there's no timeout */
-	public static final int TIMEOUT_SECONDS = 0;
+	/** Query timeout in seconds. Prevents hung queries on database locks or corruption. */
+	public static final int TIMEOUT_SECONDS = 30;
 
 	/** 64MB page cache - significantly improves read performance for large databases */
 	private static final int PRAGMA_CACHE_SIZE_KB = 65536;
