@@ -131,7 +131,14 @@ public class LodDataBuilder
 			int exclusiveMaxBuildHeight = chunkWrapper.getExclusiveMaxBuildHeight();
 			int inclusiveMinBuildHeight = chunkWrapper.getInclusiveMinBuildHeight();
 			int dataCapacity = chunkWrapper.getHeight() / 4;
-			
+
+			// Pre-allocate biome cache array once per chunk instead of per column (256x reduction)
+			// Biomes are stored at 4-block (quart) resolution in Minecraft
+			int minQuartY = inclusiveMinBuildHeight >> 2;
+			int maxQuartY = exclusiveMaxBuildHeight >> 2;
+			int quartCount = maxQuartY - minQuartY + 1;
+			IBiomeWrapper[] biomeCache = new IBiomeWrapper[quartCount];
+
 			for (int relBlockX = 0; relBlockX < LodUtil.CHUNK_WIDTH; relBlockX++)
 			{
 				for (int relBlockZ = 0; relBlockZ < LodUtil.CHUNK_WIDTH; relBlockZ++)
@@ -139,7 +146,7 @@ public class LodDataBuilder
 					// Calculate column position
 					int columnX = relBlockX + chunkOffsetX;
 					int columnZ = relBlockZ + chunkOffsetZ;
-					
+
 					// Get column data
 					LongArrayList longs = dataSource.getColumnAtRelPos(columnX, columnZ);
 					if (longs == null)
@@ -151,12 +158,7 @@ public class LodDataBuilder
 						longs.clear();
 					}
 
-					// Pre-cache all biomes for this column to avoid repeated JNI calls
-					// Biomes are stored at 4-block (quart) resolution in Minecraft
-					int minQuartY = inclusiveMinBuildHeight >> 2;
-					int maxQuartY = exclusiveMaxBuildHeight >> 2;
-					int quartCount = maxQuartY - minQuartY + 1;
-					IBiomeWrapper[] biomeCache = new IBiomeWrapper[quartCount];
+					// Populate biome cache for this column (reuses pre-allocated array)
 					for (int quartY = minQuartY; quartY <= maxQuartY; quartY++)
 					{
 						int sampleY = quartY << 2; // Convert quart back to block Y
