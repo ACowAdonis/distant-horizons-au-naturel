@@ -40,6 +40,7 @@ import com.seibel.distanthorizons.core.util.math.Vec3f;
 import com.seibel.distanthorizons.core.util.threading.PriorityTaskPicker;
 import com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -334,20 +335,32 @@ public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 im
 		}
 
 		// This section doesn't exist or is incomplete, queue children for generation.
-		LongArrayList generationList = new LongArrayList();
-
 		byte lowestGeneratorDetailLevel = (byte) Math.min(
 				worldGenQueue.lowestDataDetail() + DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL,
 				DhSectionPos.getDetailLevel(pos));
 
-		DhSectionPos.forEachChildAtDetailLevel(pos, lowestGeneratorDetailLevel, (genPos) ->
+		// Collect all child positions first
+		LongArrayList allChildPositions = new LongArrayList();
+		DhSectionPos.forEachChildAtDetailLevel(pos, lowestGeneratorDetailLevel, allChildPositions::add);
+
+		if (allChildPositions.isEmpty())
 		{
-			// If the position doesn't exist or is incomplete, it needs generation
-			if (!this.repo.existsAndIsComplete(genPos))
+			return new LongArrayList();
+		}
+
+		// Batch query to get all complete positions at once (single DB round-trip)
+		LongOpenHashSet completePositions = this.repo.getCompletePositions(allChildPositions);
+
+		// Build generation list from positions not in the complete set
+		LongArrayList generationList = new LongArrayList();
+		for (int i = 0; i < allChildPositions.size(); i++)
+		{
+			long genPos = allChildPositions.getLong(i);
+			if (!completePositions.contains(genPos))
 			{
 				generationList.add(genPos);
 			}
-		});
+		}
 
 		return generationList;
 	}

@@ -24,9 +24,9 @@ import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
 import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos;
 import com.seibel.distanthorizons.core.pos.DhChunkPos;
 import com.seibel.distanthorizons.core.pos.DhSectionPos;
+import com.seibel.distanthorizons.core.sql.DbConnectionClosedException;
 import com.seibel.distanthorizons.core.sql.dto.BeaconBeamDTO;
 import com.seibel.distanthorizons.core.util.LodUtil;
-import com.seibel.distanthorizons.core.logging.DhLogger;
 import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
@@ -97,6 +97,22 @@ public class BeaconBeamRepo extends AbstractDhRepo<DhBlockPos, BeaconBeamDTO>
 		return dto;
 	}
 	
+	private final String upsertSqlTemplate =
+		"INSERT INTO "+this.getTableName() + " (\n" +
+		"   BlockPosX, BlockPosY, BlockPosZ, \n" +
+		"   ColorR, ColorG, ColorB, \n" +
+		"   LastModifiedUnixDateTime, CreatedUnixDateTime) \n" +
+		"VALUES( \n" +
+		"    ?, ?, ?, \n" +
+		"    ?, ?, ?, \n" +
+		"    ?, ? \n" +
+		") \n" +
+		"ON CONFLICT(BlockPosX, BlockPosY, BlockPosZ) DO UPDATE SET \n" +
+		"   ColorR = excluded.ColorR, \n" +
+		"   ColorG = excluded.ColorG, \n" +
+		"   ColorB = excluded.ColorB, \n" +
+		"   LastModifiedUnixDateTime = excluded.LastModifiedUnixDateTime;";
+
 	private final String insertSqlTemplate =
 		"INSERT INTO "+this.getTableName() + " (\n" +
 		"   BlockPosX, BlockPosY, BlockPosZ, \n" +
@@ -157,12 +173,62 @@ public class BeaconBeamRepo extends AbstractDhRepo<DhBlockPos, BeaconBeamDTO>
 		statement.setInt(i++, dto.blockPos.getX());
 		statement.setInt(i++, dto.blockPos.getY());
 		statement.setInt(i++, dto.blockPos.getZ());
-		
+
 		return statement;
 	}
-	
-	
-	
+
+
+
+	//========//
+	// UPSERT //
+	//========//
+
+	@Override
+	public void save(BeaconBeamDTO dto)
+	{
+		try (PreparedStatement statement = this.createUpsertStatement(dto);
+			 ResultSet result = this.query(statement))
+		{
+			// result is unused - UPSERT doesn't return rows
+		}
+		catch (DbConnectionClosedException ignored)
+		{
+			// Connection was closed, nothing to do
+		}
+		catch (SQLException e)
+		{
+			String message = "Unexpected BeaconBeam upsert error: [" + e.getMessage() + "].";
+			LOGGER.error(message);
+			throw new RuntimeException(message, e);
+		}
+	}
+
+	@Nullable
+	private PreparedStatement createUpsertStatement(BeaconBeamDTO dto) throws SQLException
+	{
+		PreparedStatement statement = this.createPreparedStatement(this.upsertSqlTemplate);
+		if (statement == null)
+		{
+			return null;
+		}
+
+		int i = 1;
+		statement.setInt(i++, dto.blockPos.getX());
+		statement.setInt(i++, dto.blockPos.getY());
+		statement.setInt(i++, dto.blockPos.getZ());
+
+		statement.setInt(i++, dto.color.getRed());
+		statement.setInt(i++, dto.color.getGreen());
+		statement.setInt(i++, dto.color.getBlue());
+
+		statement.setLong(i++, System.currentTimeMillis()); // last modified unix time
+		statement.setLong(i++, System.currentTimeMillis()); // created unix time
+
+		return statement;
+	}
+
+
+
 	//====================//
 	// additional methods //
 	//====================//

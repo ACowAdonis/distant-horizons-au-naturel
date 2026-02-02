@@ -29,6 +29,7 @@ import com.seibel.distanthorizons.core.sql.dto.FullDataSourceV2DTO;
 import com.seibel.distanthorizons.core.util.BoolUtil;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.*;
@@ -611,6 +612,74 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		{
 			throw new RuntimeException(e);
 		}
+	}
+
+	/**
+	 * Batch version of existsAndIsComplete.
+	 * Returns a set of positions that exist AND are complete.
+	 * Positions not in the returned set either don't exist or are incomplete.
+	 */
+	public LongOpenHashSet getCompletePositions(LongArrayList positions)
+	{
+		LongOpenHashSet completePositions = new LongOpenHashSet();
+		if (positions.isEmpty())
+		{
+			return completePositions;
+		}
+
+		// Build query: SELECT DetailLevel, PosX, PosZ FROM FullData WHERE IsComplete = 1 AND ((DetailLevel=? AND PosX=? AND PosZ=?) OR ...)
+		StringBuilder sql = new StringBuilder();
+		sql.append("SELECT DetailLevel, PosX, PosZ FROM ").append(this.getTableName());
+		sql.append(" WHERE IsComplete = 1 AND (");
+
+		for (int j = 0; j < positions.size(); j++)
+		{
+			if (j > 0)
+			{
+				sql.append(" OR ");
+			}
+			sql.append("(DetailLevel=? AND PosX=? AND PosZ=?)");
+		}
+		sql.append(")");
+
+		try (PreparedStatement preparedStatement = this.createPreparedStatement(sql.toString()))
+		{
+			if (preparedStatement == null)
+			{
+				return completePositions;
+			}
+
+			int i = 1;
+			for (int j = 0; j < positions.size(); j++)
+			{
+				long pos = positions.getLong(j);
+				preparedStatement.setInt(i++, DhSectionPos.getDetailLevel(pos) - DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL);
+				preparedStatement.setInt(i++, DhSectionPos.getX(pos));
+				preparedStatement.setInt(i++, DhSectionPos.getZ(pos));
+			}
+
+			try (ResultSet result = this.query(preparedStatement))
+			{
+				while (result != null && result.next())
+				{
+					byte detailLevel = (byte) (result.getByte("DetailLevel") + DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL);
+					int posX = result.getInt("PosX");
+					int posZ = result.getInt("PosZ");
+					long pos = DhSectionPos.encode(detailLevel, posX, posZ);
+					completePositions.add(pos);
+				}
+			}
+		}
+		catch (DbConnectionClosedException e)
+		{
+			return completePositions;
+		}
+		catch (SQLException e)
+		{
+			throw new RuntimeException(e);
+		}
+
+		return completePositions;
 	}
 
 

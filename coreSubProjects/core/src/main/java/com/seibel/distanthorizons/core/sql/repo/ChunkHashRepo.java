@@ -21,6 +21,7 @@ package com.seibel.distanthorizons.core.sql.repo;
 
 import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
 import com.seibel.distanthorizons.core.pos.DhChunkPos;
+import com.seibel.distanthorizons.core.sql.DbConnectionClosedException;
 import com.seibel.distanthorizons.core.sql.dto.ChunkHashDTO;
 import com.seibel.distanthorizons.core.logging.DhLogger;
 import org.jetbrains.annotations.Nullable;
@@ -86,6 +87,20 @@ public class ChunkHashRepo extends AbstractDhRepo<DhChunkPos, ChunkHashDTO>
 		return dto;
 	}
 	
+	private final String upsertSqlTemplate =
+		"INSERT INTO "+this.getTableName() + " (\n" +
+		"   ChunkPosX, ChunkPosZ, \n" +
+		"   ChunkHash, \n" +
+		"   LastModifiedUnixDateTime, CreatedUnixDateTime) \n" +
+		"VALUES( \n" +
+		"    ?, ?, \n" +
+		"    ?, \n" +
+		"    ?, ? \n" +
+		") \n" +
+		"ON CONFLICT(ChunkPosX, ChunkPosZ) DO UPDATE SET \n" +
+		"   ChunkHash = excluded.ChunkHash, \n" +
+		"   LastModifiedUnixDateTime = excluded.LastModifiedUnixDateTime;";
+
 	private final String insertSqlTemplate =
 		"INSERT INTO "+this.getTableName() + " (\n" +
 		"   ChunkPosX, ChunkPosZ, \n" +
@@ -140,10 +155,57 @@ public class ChunkHashRepo extends AbstractDhRepo<DhChunkPos, ChunkHashDTO>
 		
 		statement.setObject(i++, dto.pos.getX());
 		statement.setObject(i++, dto.pos.getZ());
-		
+
 		return statement;
 	}
-	
-	
-	
+
+
+
+	//========//
+	// UPSERT //
+	//========//
+
+	@Override
+	public void save(ChunkHashDTO dto)
+	{
+		try (PreparedStatement statement = this.createUpsertStatement(dto);
+			 ResultSet result = this.query(statement))
+		{
+			// result is unused - UPSERT doesn't return rows
+		}
+		catch (DbConnectionClosedException ignored)
+		{
+			// Connection was closed, nothing to do
+		}
+		catch (SQLException e)
+		{
+			String message = "Unexpected ChunkHash upsert error: [" + e.getMessage() + "].";
+			LOGGER.error(message);
+			throw new RuntimeException(message, e);
+		}
+	}
+
+	@Nullable
+	private PreparedStatement createUpsertStatement(ChunkHashDTO dto) throws SQLException
+	{
+		PreparedStatement statement = this.createPreparedStatement(this.upsertSqlTemplate);
+		if (statement == null)
+		{
+			return null;
+		}
+
+		int i = 1;
+		statement.setInt(i++, dto.pos.getX());
+		statement.setInt(i++, dto.pos.getZ());
+
+		statement.setInt(i++, dto.chunkHash);
+
+		statement.setLong(i++, System.currentTimeMillis()); // last modified unix time
+		statement.setLong(i++, System.currentTimeMillis()); // created unix time
+
+		return statement;
+	}
+
+
+
 }
