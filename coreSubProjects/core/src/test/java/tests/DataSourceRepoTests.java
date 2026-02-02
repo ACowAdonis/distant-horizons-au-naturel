@@ -106,32 +106,15 @@ public class DataSourceRepoTests
 				}
 			}
 			
-			byte[] columnGenStep = new byte[FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH];
-			Arrays.fill(columnGenStep, (byte)3);
-			
 			byte[] columnWorldCompressionMode = new byte[FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH];
 			Arrays.fill(columnWorldCompressionMode, (byte)3);
-			
-			
-			
-			FullDataSourceV2 originalDataSource = FullDataSourceV2.createWithData(pos, dataMapping, fullDataArray, columnGenStep, columnWorldCompressionMode);
+
+			FullDataSourceV2 originalDataSource = FullDataSourceV2.createWithData(pos, dataMapping, fullDataArray, columnWorldCompressionMode);
 			FullDataSourceV2DTO originalDto = FullDataSourceV2DTO.CreateFromDataSource(originalDataSource, EDhApiDataCompressionMode.LZMA2);
 			repo.save(originalDto);
-			
-			
-			// also create format-1 encoded version to ensure backwards compatibility
-			long posV1 = DhSectionPos.encode((byte) 6, 2, 3);
-			FullDataSourceV2 dataSourceFormatV1 = FullDataSourceV2.createWithData(posV1, dataMapping, fullDataArray, columnGenStep, columnWorldCompressionMode);
-			FullDataSourceV2DTO dtoFormatV1 = FullDataSourceV2DTO.CreateFromDataSource(dataSourceFormatV1, EDhApiDataCompressionMode.LZMA2);
-			FullDataSourceV2DTO.writeDataSourceDataArrayToBlobV1(
-					dataSourceFormatV1.dataPoints,
-					dtoFormatV1.compressedDataByteArray,
-					EDhApiDataCompressionMode.LZMA2);
-			dtoFormatV1.dataFormatVersion = FullDataSourceV2DTO.DATA_FORMAT.V1_NO_ADJACENT_DATA;
-			repo.save(dtoFormatV1);
-			
-			
-			
+
+
+
 			//=======================//
 			// confirm DTO data is   // 
 			// the same after saving //
@@ -142,7 +125,6 @@ public class DataSourceRepoTests
 			Assert.assertNotNull("Failed to find DTO", savedDto);
 			Assert.assertEquals("Pos mismatch", originalDto.pos, savedDto.pos);
 			assertArraysAreEqual(originalDto.compressedDataByteArray, savedDto.compressedDataByteArray);
-			assertArraysAreEqual(originalDto.compressedColumnGenStepByteArray, savedDto.compressedColumnGenStepByteArray);
 			assertArraysAreEqual(originalDto.compressedWorldCompressionModeByteArray, savedDto.compressedWorldCompressionModeByteArray);
 			
 			assertArraysAreEqual(originalDto.compressedNorthAdjDataByteArray, savedDto.compressedNorthAdjDataByteArray);
@@ -161,10 +143,9 @@ public class DataSourceRepoTests
 			{
 				Assert.assertNotNull("Failed to create DataSource", savedDataSource);
 				Assert.assertEquals("Pos mismatch", originalDataSource.getPos(), savedDataSource.getPos());
-				assertArraysAreEqual(originalDataSource.columnGenerationSteps, savedDataSource.columnGenerationSteps);
 				assertArraysAreEqual(originalDataSource.columnWorldCompressionMode, savedDataSource.columnWorldCompressionMode);
 				Assert.assertEquals(originalDataSource.dataPoints.length, savedDataSource.dataPoints.length);
-				
+
 				for (int x = 0; x < FullDataSourceV2.WIDTH; x++)
 				{
 					for (int z = 0; z < FullDataSourceV2.WIDTH; z++)
@@ -172,21 +153,6 @@ public class DataSourceRepoTests
 						int index = FullDataSourceV2.relativePosToIndex(x, z);
 						assertArraysAreEqual("Saved data column at rel pos ["+x+","+z+"] ", originalDataSource.dataPoints[index], savedDataSource.dataPoints[index]);
 					}
-				}
-			}
-			
-			// check that we have proper backwards compatability to V1
-			try (FullDataSourceV2 savedDataSource = repo.getByKey(posV1).createUnitTestDataSource())
-			{
-				Assert.assertNotNull("Failed to create DataSource", savedDataSource);
-				assertArraysAreEqual(originalDataSource.columnGenerationSteps, savedDataSource.columnGenerationSteps);
-				assertArraysAreEqual(originalDataSource.columnWorldCompressionMode,
-						savedDataSource.columnWorldCompressionMode);
-				Assert.assertTrue(originalDataSource.dataPoints.length == savedDataSource.dataPoints.length);
-				
-				for (int i = 0; i < FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH; i++)
-				{
-					assertArraysAreEqual(originalDataSource.dataPoints[i], savedDataSource.dataPoints[i]);
 				}
 			}
 			
@@ -317,7 +283,6 @@ public class DataSourceRepoTests
 							{
 								Assert.assertEquals(pooledDto.pos, threadDto.pos);
 								Assert.assertFalse(pooledDto.compressedDataByteArray.isEmpty());
-								Assert.assertFalse(pooledDto.compressedColumnGenStepByteArray.isEmpty());
 								Assert.assertFalse(pooledDto.compressedWorldCompressionModeByteArray.isEmpty());
 								
 								try (FullDataSourceV2 dataSource = pooledDto.createUnitTestDataSource();

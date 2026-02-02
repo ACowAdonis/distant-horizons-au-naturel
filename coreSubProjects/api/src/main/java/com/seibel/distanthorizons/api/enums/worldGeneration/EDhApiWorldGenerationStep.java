@@ -25,13 +25,9 @@ package com.seibel.distanthorizons.api.enums.worldGeneration;
  * Only PRE_EXISTING_ONLY and INTERNAL_SERVER generation modes are supported,
  * which means chunks are always complete (LIGHT status). <br><br>
  *
- * DOWN_SAMPLED, <br>
- * EMPTY, <br>
- * STRUCTURE_START, <br>
- * STRUCTURE_REFERENCE, <br>
- * BIOMES, <br>
- * NOISE, <br>
- * LIGHT <br>
+ * The intermediate steps (STRUCTURE_START through NOISE) are used internally
+ * by the world generation pipeline but all LOD data is ultimately stored
+ * as either not present or complete (LIGHT). <br><br>
  *
  * @author James Seibel
  * @version 2024-12-13
@@ -39,14 +35,6 @@ package com.seibel.distanthorizons.api.enums.worldGeneration;
  */
 public enum EDhApiWorldGenerationStep
 {
-	/**
-	 * Only used when using N-sized world generators or server-side retrieval.
-	 * This denotes that the given datasource was created using lower quality LOD data from above it in the quad tree. <br>
-	 *
-	 * This isn't a valid option for queuing world generation.
-	 */
-	DOWN_SAMPLED(-1, "down_sampled"),
-
 	EMPTY(0, "empty"),
 	STRUCTURE_START(1, "structure_start"),
 	STRUCTURE_REFERENCE(2, "structure_reference"),

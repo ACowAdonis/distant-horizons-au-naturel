@@ -505,10 +505,8 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 				FullDataSourceV2 pooledDataSource = FullDataSourceV2.createEmpty(requestPos);
 				// set here so the API user doesn't have to pass in this value anywhere themselves
 				pooledDataSource.setRunApiChunkValidation(this.generator.runApiValidation());
-				
-				// only apply to children if we aren't at the bottom of the tree
-				
-				pooledDataSource.applyToChildren = DhSectionPos.getDetailLevel(pooledDataSource.getPos()) > DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL;
+
+				// apply to parent if not at the top of the tree
 				pooledDataSource.applyToParent = DhSectionPos.getDetailLevel(pooledDataSource.getPos()) < DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL + 12;
 				
 				

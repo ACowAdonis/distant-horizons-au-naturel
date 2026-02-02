@@ -20,7 +20,6 @@
 package tests;
 
 import com.seibel.distanthorizons.api.enums.config.EDhApiWorldCompressionMode;
-import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGenerationStep;
 import com.seibel.distanthorizons.core.dataObjects.fullData.FullDataPointIdMap;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
 import com.seibel.distanthorizons.core.pos.DhSectionPos;
@@ -90,13 +89,10 @@ public class DataSourceUpdateSpeedTest
 				FullDataSourceV2.throwIfDataColumnInWrongOrder(parentPos, fullDataArray[arrayIndex]);
 			}
 			
-			byte[] columnGenStep = new byte[FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH];
-			Arrays.fill(columnGenStep, EDhApiWorldGenerationStep.LIGHT.value);
-			
 			byte[] columnWorldCompressionMode = new byte[FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH];
 			Arrays.fill(columnWorldCompressionMode, EDhApiWorldCompressionMode.VISUALLY_EQUAL.value);
-			
-			parentDataSource = FullDataSourceV2.createWithData(parentPos, dataMapping, fullDataArray, columnGenStep, columnWorldCompressionMode);
+
+			parentDataSource = FullDataSourceV2.createWithData(parentPos, dataMapping, fullDataArray, columnWorldCompressionMode);
 		}
 		
 		
@@ -143,15 +139,10 @@ public class DataSourceUpdateSpeedTest
 				FullDataSourceV2.throwIfDataColumnInWrongOrder(childPos, fullDataArray[arrayIndex]);
 			}
 			
-			byte[] columnGenStep = new byte[FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH];
-			Arrays.fill(columnGenStep, EDhApiWorldGenerationStep.LIGHT.value);
-			
 			byte[] columnWorldCompressionMode = new byte[FullDataSourceV2.WIDTH * FullDataSourceV2.WIDTH];
 			Arrays.fill(columnWorldCompressionMode, EDhApiWorldCompressionMode.VISUALLY_EQUAL.value);
-			
-			
-			
-			childDataSource = FullDataSourceV2.createWithData(childPos, dataMapping, fullDataArray, columnGenStep, columnWorldCompressionMode);
+
+			childDataSource = FullDataSourceV2.createWithData(childPos, dataMapping, fullDataArray, columnWorldCompressionMode);
 		}
 		
 		

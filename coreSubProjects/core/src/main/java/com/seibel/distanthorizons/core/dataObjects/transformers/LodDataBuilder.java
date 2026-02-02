@@ -23,7 +23,6 @@ import java.util.Collections;
 import java.util.List;
 
 import com.seibel.distanthorizons.api.enums.config.EDhApiWorldCompressionMode;
-import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGenerationStep;
 import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiChunkProcessingEvent;
 import com.seibel.distanthorizons.api.objects.data.DhApiChunk;
 import com.seibel.distanthorizons.api.objects.data.DhApiTerrainDataPoint;
@@ -280,7 +279,7 @@ public class LodDataBuilder
 					longs.add(FullDataPointUtil.encode(mappedId, lastY - y, y + 1 - inclusiveMinBuildHeight, blockLight, skyLight));
 					
 					// Set the column in the data source
-					dataSource.setSingleColumn(longs, columnX, columnZ, EDhApiWorldGenerationStep.LIGHT, worldCompressionMode);
+					dataSource.setSingleColumn(longs, columnX, columnZ, worldCompressionMode);
 				}
 			}
 		}
@@ -342,11 +341,11 @@ public class LodDataBuilder
 				LongArrayList packedDataPoints = convertApiDataPointListToPackedLongArray(columnDataPoints, dataSource, apiChunk.bottomYBlockPos, runAdditionalValidation);
 				
 				// TODO add the ability for API users to define a different compression mode
-				//  or add a "unkown" compression mode
+				//  or add a "unknown" compression mode
 				dataSource.setSingleColumn(
 						packedDataPoints,
 						relBlockX + relSourceBlockX, relBlockZ + relSourceBlockZ,
-						EDhApiWorldGenerationStep.LIGHT, EDhApiWorldCompressionMode.MERGE_SAME_BLOCKS);
+						EDhApiWorldCompressionMode.MERGE_SAME_BLOCKS);
 			}
 		}
 		return dataSource;

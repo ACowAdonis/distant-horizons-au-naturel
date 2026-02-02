@@ -103,7 +103,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 
 		// while these values can be null in the DB, null would just equate to false
 		boolean applyToParent = (resultSet.getInt("ApplyToParent")) == 1;
-		boolean applyToChildren = (resultSet.getInt("ApplyToChildren")) == 1;
 		boolean isComplete = (resultSet.getInt("IsComplete")) == 1;
 
 		long lastModifiedUnixDateTime = resultSet.getLong("LastModifiedUnixDateTime");
@@ -140,7 +139,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 			dto.lastModifiedUnixDateTime = lastModifiedUnixDateTime;
 			dto.createdUnixDateTime = createdUnixDateTime;
 			dto.applyToParent = applyToParent;
-			dto.applyToChildren = applyToChildren;
 			dto.isComplete = isComplete;
 		}
 		return dto;
@@ -161,8 +159,7 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		
 		// while these values can be null in the DB, null would just equate to false
 		boolean applyToParent = (resultSet.getInt("ApplyToParent")) == 1;
-		boolean applyToChildren = (resultSet.getInt("ApplyToChildren")) == 1;
-		
+
 		long lastModifiedUnixDateTime = resultSet.getLong("LastModifiedUnixDateTime");
 		long createdUnixDateTime = resultSet.getLong("CreatedUnixDateTime");
 		
@@ -187,7 +184,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 			dto.lastModifiedUnixDateTime = lastModifiedUnixDateTime;
 			dto.createdUnixDateTime = createdUnixDateTime;
 			dto.applyToParent = applyToParent;
-			dto.applyToChildren = applyToChildren;
 		}
 		return dto;
 	}
@@ -195,7 +191,7 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 	
 	/**
 	 * Atomic UPSERT using SQLite's ON CONFLICT clause.
-	 * Uses COALESCE for ApplyToParent/ApplyToChildren to preserve existing values when null is passed,
+	 * Uses COALESCE for ApplyToParent to preserve existing value when null is passed,
 	 * which is needed to prevent concurrent modification during update propagation.
 	 */
 	private final String upsertSqlTemplate =
@@ -204,14 +200,14 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		"   MinY, DataChecksum, \n" +
 		"   Data, ColumnWorldCompressionMode, Mapping, \n" +
 		"   NorthAdjData, SouthAdjData, EastAdjData, WestAdjData, \n" +
-		"   DataFormatVersion, CompressionMode, ApplyToParent, ApplyToChildren, IsComplete, \n" +
+		"   DataFormatVersion, CompressionMode, ApplyToParent, IsComplete, \n" +
 		"   LastModifiedUnixDateTime, CreatedUnixDateTime) \n" +
 		"VALUES( \n" +
 		"    ?, ?, ?, \n" +
 		"    ?, ?, \n" +
 		"    ?, ?, ?, \n" +
 		"    ?, ?, ?, ?, \n" +
-		"    ?, ?, ?, ?, ?, \n" +
+		"    ?, ?, ?, ?, \n" +
 		"    ?, ? \n" +
 		") \n" +
 		"ON CONFLICT(DetailLevel, PosX, PosZ) DO UPDATE SET \n" +
@@ -226,7 +222,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		"   DataFormatVersion = excluded.DataFormatVersion, \n" +
 		"   CompressionMode = excluded.CompressionMode, \n" +
 		"   ApplyToParent = COALESCE(excluded.ApplyToParent, ApplyToParent), \n" +
-		"   ApplyToChildren = COALESCE(excluded.ApplyToChildren, ApplyToChildren), \n" +
 		"   IsComplete = excluded.IsComplete, \n" +
 		"   LastModifiedUnixDateTime = excluded.LastModifiedUnixDateTime;";
 
@@ -236,14 +231,14 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		"   MinY, DataChecksum, \n" +
 		"   Data, ColumnWorldCompressionMode, Mapping, \n" +
 		"   NorthAdjData, SouthAdjData, EastAdjData, WestAdjData, \n" +
-		"   DataFormatVersion, CompressionMode, ApplyToParent, ApplyToChildren, IsComplete, \n" +
+		"   DataFormatVersion, CompressionMode, ApplyToParent, IsComplete, \n" +
 		"   LastModifiedUnixDateTime, CreatedUnixDateTime) \n" +
 		"VALUES( \n" +
 		"    ?, ?, ?, \n" +
 		"    ?, ?, \n" +
 		"    ?, ?, ?, \n" +
 		"    ?, ?, ?, ?, \n" +
-		"    ?, ?, ?, ?, ?, \n" +
+		"    ?, ?, ?, ?, \n" +
 		"    ?, ? \n" +
 		");";
 	@Override
@@ -280,7 +275,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		statement.setByte(i++, dto.compressionModeValue);
 		// if nothing is present assume we don't need/want to propagate updates
 		statement.setBoolean(i++, BoolUtil.falseIfNull(dto.applyToParent));
-		statement.setBoolean(i++, BoolUtil.falseIfNull(dto.applyToChildren));
 		statement.setBoolean(i++, dto.isComplete);
 
 		statement.setLong(i++, System.currentTimeMillis()); // last modified unix time
@@ -292,8 +286,7 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 	@Override
 	public PreparedStatement createUpdateStatement(FullDataSourceV2DTO dto) throws SQLException
 	{
-		// Dynamic string so we can update one, both, or neither
-		// of the applyTo... flags.
+		// Dynamic string so we can update ApplyToParent flag only if present.
 		// This is necessary to prevent concurrent modifications when
 		// update propagation is run.
 		String updateSqlTemplate = (
@@ -308,9 +301,8 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 
 				"   ,DataFormatVersion = ? \n" +
 				"   ,CompressionMode = ? \n" +
-					// only update these values if they're present
+					// only update this value if it's present
 					(dto.applyToParent != null ? "   ,ApplyToParent = ? \n" : "" ) +
-					(dto.applyToChildren != null ? "   ,ApplyToChildren = ? \n" : "" ) +
 				"   ,IsComplete = ? \n" +
 
 				"   ,LastModifiedUnixDateTime = ? \n" +
@@ -346,10 +338,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 		if (dto.applyToParent != null)
 		{
 			statement.setBoolean(i++, dto.applyToParent);
-		}
-		if (dto.applyToChildren != null)
-		{
-			statement.setBoolean(i++, dto.applyToChildren);
 		}
 		statement.setBoolean(i++, dto.isComplete);
 
@@ -427,15 +415,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 			statement.setNull(i++, java.sql.Types.BOOLEAN);
 		}
 
-		if (dto.applyToChildren != null)
-		{
-			statement.setBoolean(i++, dto.applyToChildren);
-		}
-		else
-		{
-			statement.setNull(i++, java.sql.Types.BOOLEAN);
-		}
-
 		statement.setBoolean(i++, dto.isComplete);
 
 		statement.setLong(i++, System.currentTimeMillis()); // last modified unix time
@@ -454,7 +433,7 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 			"SELECT \n" +
 					"   DataChecksum, \n" +
 					"   ColumnWorldCompressionMode, Mapping, \n" +
-					"   DataFormatVersion, CompressionMode, ApplyToParent, ApplyToChildren, \n" +
+					"   DataFormatVersion, CompressionMode, ApplyToParent, \n" +
 					"   LastModifiedUnixDateTime, CreatedUnixDateTime, \n" +
 					"   DIRECTION_ENUM as AdjData \n" +
 					"FROM "+this.getTableName() + "\n" +
@@ -537,44 +516,30 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 	// updates //
 	//=========//
 	
-	/** should be be very similar to {@link FullDataSourceV2Repo#setApplyToChildrenSql} */
-	private final String setApplyToParentSql = 
+	private final String setApplyToParentSql =
 			"UPDATE "+this.getTableName()+" \n" +
 			"SET ApplyToParent = ? \n" +
 			"WHERE DetailLevel = ? AND PosX = ? AND PosZ = ?";
 	public void setApplyToParent(long pos, boolean applyToParent)
-	{ this.setApplyToFlag(pos, applyToParent, true); }
-	
-	/** should be be very similar to {@link FullDataSourceV2Repo#setApplyToParentSql} */
-	private final String setApplyToChildrenSql =
-			"UPDATE "+this.getTableName()+" \n" +
-					"SET ApplyToChildren = ? \n" +
-					"WHERE DetailLevel = ? AND PosX = ? AND PosZ = ?";
-	public void setApplyToChild(long pos, boolean applyToChild)
-	{ this.setApplyToFlag(pos, applyToChild, false); }
-	
-	private void setApplyToFlag(long pos, boolean applyFlag, boolean applyToParent)
 	{
-		String sql = applyToParent ? this.setApplyToParentSql : this.setApplyToChildrenSql;
-		try (PreparedStatement statement = this.createPreparedStatement(sql))
+		try (PreparedStatement statement = this.createPreparedStatement(this.setApplyToParentSql))
 		{
 			if (statement == null)
 			{
 				return;
 			}
-			
-			
+
 			int i = 1;
-			statement.setBoolean(i++, applyFlag);
-			
+			statement.setBoolean(i++, applyToParent);
+
 			int detailLevel = DhSectionPos.getDetailLevel(pos) - DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL;
 			statement.setInt(i++, detailLevel);
 			statement.setInt(i++, DhSectionPos.getX(pos));
 			statement.setInt(i++, DhSectionPos.getZ(pos));
-			
+
 			try (ResultSet result = this.query(statement))
 			{
-				
+				// Result is unused
 			}
 		}
 		catch (SQLException e)
@@ -585,7 +550,6 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 	
 	
 	
-	/** should be be very similar to {@link FullDataSourceV2Repo#getChildPositionsToUpdateSql} */
 	private final String getParentPositionsToUpdateSql =
 			"SELECT DetailLevel, PosX, PosZ, " +
 			"   abs((PosX << (6 + DetailLevel)) - ?) + abs((PosZ << (6 + DetailLevel)) - ?) AS Distance " +
@@ -594,25 +558,10 @@ public class FullDataSourceV2Repo extends AbstractDhRepo<Long, FullDataSourceV2D
 			"ORDER BY DetailLevel ASC, Distance ASC " +
 			"LIMIT ?; ";
 	public LongArrayList getPositionsToUpdate(int targetBlockPosX, int targetBlockPosZ, int returnCount)
-	{ return this.getPositionsToUpdate(targetBlockPosX, targetBlockPosZ, returnCount, true); }
-	
-	/** should be be very similar to {@link FullDataSourceV2Repo#getParentPositionsToUpdateSql} */
-	private final String getChildPositionsToUpdateSql =
-			"SELECT DetailLevel, PosX, PosZ, " +
-			"   abs((PosX << (6 + DetailLevel)) - ?) + abs((PosZ << (6 + DetailLevel)) - ?) AS Distance " +
-			"FROM " + this.getTableName() + " " +
-			"WHERE ApplyToChildren = 1 " +
-			"ORDER BY DetailLevel ASC, Distance ASC " +
-			"LIMIT ?; ";
-	public LongArrayList getChildPositionsToUpdate(int targetBlockPosX, int targetBlockPosZ, int returnCount)
-	{ return this.getPositionsToUpdate(targetBlockPosX, targetBlockPosZ, returnCount, false); }
-	
-	private LongArrayList getPositionsToUpdate(int targetBlockPosX, int targetBlockPosZ, int returnCount, boolean getParentUpdates)
 	{
 		LongArrayList list = new LongArrayList();
-		
-		String sql = getParentUpdates ? this.getParentPositionsToUpdateSql : this.getChildPositionsToUpdateSql;
-		try (PreparedStatement statement = this.createPreparedStatement(sql))
+
+		try (PreparedStatement statement = this.createPreparedStatement(this.getParentPositionsToUpdateSql))
 		{
 			if (statement == null)
 			{

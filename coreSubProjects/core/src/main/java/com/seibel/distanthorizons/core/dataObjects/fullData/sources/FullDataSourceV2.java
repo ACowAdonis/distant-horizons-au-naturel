@@ -20,7 +20,6 @@
 package com.seibel.distanthorizons.core.dataObjects.fullData.sources;
 
 import com.seibel.distanthorizons.api.enums.config.EDhApiWorldCompressionMode;
-import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGenerationStep;
 import com.seibel.distanthorizons.api.objects.data.DhApiTerrainDataPoint;
 import com.seibel.distanthorizons.api.objects.data.IDhApiFullDataSource;
 import com.seibel.distanthorizons.core.config.Config;
@@ -98,14 +97,8 @@ public class FullDataSourceV2
 	
 	public long lastModifiedUnixDateTime;
 	public long createdUnixDateTime;
-	
-	/** 
-	 * stores how far each column has been generated should start with {@link EDhApiWorldGenerationStep#EMPTY}
-	 *
-	 * @see EDhApiWorldGenerationStep
-	 */
-	public final ByteArrayList columnGenerationSteps;
-	/** 
+
+	/**
 	 * stores what world compression was used for each column.
 	 *
 	 * @see EDhApiWorldCompressionMode
@@ -122,10 +115,7 @@ public class FullDataSourceV2
 	/** Will be null if we don't want to update this value in the DB */
 	@Nullable
 	public Boolean applyToParent = null;
-	/** Will be null if we don't want to update this value in the DB */
-	@Nullable
-	public Boolean applyToChildren = null;
-	
+
 	/** should only be used by methods exposed via the DH API */
 	private boolean runApiChunkValidation = false;
 	
@@ -141,24 +131,24 @@ public class FullDataSourceV2
 	{
 		return new FullDataSourceV2(
 				pos, new FullDataPointIdMap(pos),
-				// data points, genSteps, and columnCompression are all null since
+				// data points and columnCompression are null since
 				// nothing has been generated yet.
 				// Using the default value of all 0's is adequate
-				null,
 				null, null,
 				true);
 	}
-	
-	public static FullDataSourceV2 createWithData(long pos, FullDataPointIdMap mapping, LongArrayList[] data, byte[] columnGenerationStep, byte[] columnWorldCompressionMode)
-	{ return new FullDataSourceV2(pos, mapping, data, columnGenerationStep, columnWorldCompressionMode, false); }
-	
+
+	public static FullDataSourceV2 createWithData(long pos, FullDataPointIdMap mapping, LongArrayList[] data, byte[] columnWorldCompressionMode)
+	{ return new FullDataSourceV2(pos, mapping, data, columnWorldCompressionMode, false); }
+
 	private FullDataSourceV2(
 			long pos,
 			FullDataPointIdMap mapping, @Nullable LongArrayList[] data,
-			byte @Nullable [] columnGenerationSteps, byte @Nullable [] columnWorldCompressionMode,
+			byte @Nullable [] columnWorldCompressionMode,
 			boolean empty)
 	{
-		super(ARRAY_LIST_POOL, 2, 0, WIDTH * WIDTH);
+		// Only need 1 byte array now (columnWorldCompressionMode), down from 2
+		super(ARRAY_LIST_POOL, 1, 0, WIDTH * WIDTH);
 		
 		LodUtil.assertTrue(data == null || data.length == WIDTH * WIDTH);
 		
@@ -190,20 +180,9 @@ public class FullDataSourceV2
 				}
 			}
 		}
-		
-		// pooled generation step array
-		this.columnGenerationSteps = this.pooledArraysCheckout.getByteArray(0, 0); // initial size is 0 so we can simply add the existing array if present
-		if (columnGenerationSteps != null)
-		{
-			this.columnGenerationSteps.addElements(0, columnGenerationSteps);
-		}
-		else
-		{
-			ListUtil.clearAndSetSize(this.columnGenerationSteps, WIDTH * WIDTH);
-		}
-		
+
 		// pooled column compression array
-		this.columnWorldCompressionMode = this.pooledArraysCheckout.getByteArray(1, 0);
+		this.columnWorldCompressionMode = this.pooledArraysCheckout.getByteArray(0, 0);
 		if (columnWorldCompressionMode != null)
 		{
 			this.columnWorldCompressionMode.addElements(0, columnWorldCompressionMode);
@@ -328,7 +307,7 @@ public class FullDataSourceV2
 		{
 			dataChanged = this.updateFromSameDetailLevel(inputDataSource, remappedIds);
 			
-			// same detail level, propagate parent/children update flags from input
+			// same detail level, propagate parent update flag from input
 			if (this.applyToParent != null || inputDataSource.applyToParent != null)
 			{
 				this.applyToParent =
@@ -336,15 +315,6 @@ public class FullDataSourceV2
 						(BoolUtil.falseIfNull(this.applyToParent) || BoolUtil.falseIfNull(inputDataSource.applyToParent))
 						// don't propagate past the top of the tree
 						&& (DhSectionPos.getDetailLevel(this.pos) < FullDataSourceProviderV2.ROOT_SECTION_DETAIL_LEVEL);
-			}
-			
-			// null check to prevent setting a flag we don't want to save in the DB
-			if (this.applyToChildren != null || inputDataSource.applyToChildren != null)
-			{
-				this.applyToChildren =
-						(BoolUtil.falseIfNull(this.applyToChildren) || BoolUtil.falseIfNull(inputDataSource.applyToChildren))
-						// don't propagate past the bottom of the tree
-						&& (DhSectionPos.getDetailLevel(this.pos) > FullDataSourceProviderV2.LEAF_SECTION_DETAIL_LEVEL);
 			}
 		}
 		else if (inputDetailLevel + 1 == thisDetailLevel)
@@ -406,9 +376,9 @@ public class FullDataSourceV2
 		{
 			throw new IllegalArgumentException("Both data sources must have the same detail level. Expected ["+ DhSectionPos.getDetailLevel(this.pos)+"], received ["+ DhSectionPos.getDetailLevel(inputDataSource.pos)+"].");
 		}
-		
+
 		// copy over everything from the input data source into this one
-		// provided there is data to copy and the world generation step is the same or more complete
+		// provided there is data to copy
 		boolean dataChanged = false;
 		for (int x = 0; x < WIDTH; x++)
 		{
@@ -416,45 +386,13 @@ public class FullDataSourceV2
 			{
 				int index = relativePosToIndex(x, z);
 				LongArrayList inputDataArray = inputDataSource.dataPoints[index];
-				if (inputDataArray == null)
+
+				// skip if input has no data
+				if (inputDataArray == null || inputDataArray.isEmpty())
 				{
 					continue;
 				}
-				
-				
-				
-				byte thisGenState = this.columnGenerationSteps.getByte(index);
-				byte inputGenState = inputDataSource.columnGenerationSteps.getByte(index);
-				
-				
-				// determine if this column should be updated
-				boolean genStateAllowsUpdating = false;
-				// if the input is downsampled, we only want to replace empty or downsampled values
-				if (inputGenState == EDhApiWorldGenerationStep.DOWN_SAMPLED.value
-					&&
-					(
-						thisGenState == EDhApiWorldGenerationStep.EMPTY.value
-						|| thisGenState == EDhApiWorldGenerationStep.DOWN_SAMPLED.value
-					))
-				{
-					genStateAllowsUpdating = true;
-				}
-				// if the input is any other non-empty value,
-				// replace anything that is less-complete
-				else if (inputGenState != EDhApiWorldGenerationStep.EMPTY.value
-					&& thisGenState <= inputGenState)
-				{
-					// don't apply less-complete generation data
-					genStateAllowsUpdating = true;
-				}
-				
-				if (!genStateAllowsUpdating)
-				{
-					continue;
-				}
-				
-				
-				
+
 				// check if the data changed
 				if (this.dataPoints[index] == null)
 				{
@@ -467,7 +405,7 @@ public class FullDataSourceV2
 					// data is present, but the size is different
 					dataChanged = true;
 				}
-				
+
 				int oldDataHash = 0;
 				if (!dataChanged)
 				{
@@ -475,8 +413,7 @@ public class FullDataSourceV2
 					// we'll have to compare the caches
 					oldDataHash = this.dataPoints[index].hashCode();
 				}
-				
-				
+
 				// copy over the new data
 				boolean wasEmpty = this.dataPoints[index].isEmpty();
 				this.dataPoints[index].clear();
@@ -488,14 +425,12 @@ public class FullDataSourceV2
 				{
 					this.populatedColumnCount++;
 				}
-				
+
 				if (RUN_DATA_ORDER_VALIDATION)
 				{
 					throwIfDataColumnInWrongOrder(inputDataSource.pos, this.dataPoints[index]);
 				}
-				
-				
-				
+
 				if (!dataChanged)
 				{
 					// check if the identical length data column hashes are the same
@@ -506,15 +441,13 @@ public class FullDataSourceV2
 						dataChanged = true;
 					}
 				}
-				
-				
-				this.columnGenerationSteps.set(index, inputGenState);
+
 				// always overwrite the compression mode since we're replacing this column
 				this.columnWorldCompressionMode.set(index, inputDataSource.columnWorldCompressionMode.getByte(index));
 				this.isEmpty = false;
 			}
 		}
-		
+
 		return dataChanged;
 	}
 	
@@ -548,13 +481,7 @@ public class FullDataSourceV2
 				int recipientX = (x / 2) + recipientOffsetX;
 				int recipientZ = (z / 2) + recipientOffsetZ;
 				int recipientIndex = relativePosToIndex(recipientX, recipientZ);
-				
-				
-				// world gen //
-				byte inputGenStep = determineMinWorldGenStepForTwoByTwoColumn(inputDataSource.columnGenerationSteps, x, z);
-				this.columnGenerationSteps.set(recipientIndex, inputGenStep);
-				
-				
+
 				// world compression //
 				byte worldCompressionMode = determineHighestWorldCompressionForTwoByTwoColumn(inputDataSource.columnWorldCompressionMode, x, z);
 				this.columnWorldCompressionMode.set(recipientIndex, worldCompressionMode);
@@ -621,43 +548,22 @@ public class FullDataSourceV2
 		
 		return dataChanged;
 	}
-	/** 
-	 * The minimum value is used because we don't want to accidentally record that
-	 * something was generated when it wasn't.
-	 */
-	private static byte determineMinWorldGenStepForTwoByTwoColumn(ByteArrayList columnGenerationSteps, int relX, int relZ)
-	{
-		// TODO merge similar logic with determineHighestWorldCompressionForTwoByTwoColumn
-		byte minWorldGenStepValue = Byte.MAX_VALUE;
-		for (int x = 0; x < 2; x++)
-		{
-			for (int z = 0; z < 2; z++)
-			{
-				int index = relativePosToIndex(x + relX, z + relZ);
-				byte worldGenStepValue = columnGenerationSteps.getByte(index);
-				minWorldGenStepValue = (byte) Math.min(minWorldGenStepValue, worldGenStepValue);
-			}
-		}
-		return minWorldGenStepValue;
-	}
-	/** 
-	 * The minimum value is used because we don't want to accidentally record that
-	 * something was generated when it wasn't.
+	/**
+	 * The highest value is used to preserve the most detailed compression mode.
 	 */
 	private static byte determineHighestWorldCompressionForTwoByTwoColumn(ByteArrayList columnCompressionMode, int relX, int relZ)
 	{
-		// TODO merge similar logic with determineMinWorldGenStepForTwoByTwoColumn
-		byte minWorldGenStepValue = Byte.MIN_VALUE;
+		byte maxCompressionValue = Byte.MIN_VALUE;
 		for (int x = 0; x < 2; x++)
 		{
 			for (int z = 0; z < 2; z++)
 			{
 				int index = relativePosToIndex(x + relX, z + relZ);
-				byte worldGenStepValue = columnCompressionMode.getByte(index);
-				minWorldGenStepValue = (byte) Math.max(minWorldGenStepValue, worldGenStepValue);
+				byte compressionValue = columnCompressionMode.getByte(index);
+				maxCompressionValue = (byte) Math.max(maxCompressionValue, compressionValue);
 			}
 		}
-		return minWorldGenStepValue;
+		return maxCompressionValue;
 	}
 	private static LongArrayList mergeInputTwoByTwoDataColumn(FullDataSourceV2 inputDataSource, int x, int z)
 	{
@@ -1141,7 +1047,7 @@ public class FullDataSourceV2
 		this.populatedColumnCount = count;
 	}
 
-	public void setSingleColumn(LongArrayList longArray, int relX, int relZ, EDhApiWorldGenerationStep worldGenStep, EDhApiWorldCompressionMode worldCompressionMode)
+	public void setSingleColumn(LongArrayList longArray, int relX, int relZ, EDhApiWorldCompressionMode worldCompressionMode)
 	{
 		int index = relativePosToIndex(relX, relZ);
 
@@ -1153,7 +1059,6 @@ public class FullDataSourceV2
 			this.populatedColumnCount++;
 		}
 
-		this.columnGenerationSteps.set(index, worldGenStep.value);
 		this.columnWorldCompressionMode.set(index, worldCompressionMode.value);
 		
 		
@@ -1197,9 +1102,8 @@ public class FullDataSourceV2
 			}
 			
 			LongArrayList packedDataPoints = LodDataBuilder.convertApiDataPointListToPackedLongArray(columnDataPoints, this, 0, true);
-			
-			// API-provided data is treated as complete (LIGHT status)
-			this.setSingleColumn(packedDataPoints, relX, relZ, EDhApiWorldGenerationStep.LIGHT, EDhApiWorldCompressionMode.MERGE_SAME_BLOCKS);
+
+			this.setSingleColumn(packedDataPoints, relX, relZ, EDhApiWorldCompressionMode.MERGE_SAME_BLOCKS);
 			
 			return columnDataPoints;
 		}
@@ -1258,9 +1162,8 @@ public class FullDataSourceV2
 	{
 		int result = DhSectionPos.hashCode(this.pos);
 		result = 31 * result + Arrays.deepHashCode(this.dataPoints);
-		result = 17 * result + this.columnGenerationSteps.hashCode();
 		result = 43 * result + this.columnWorldCompressionMode.hashCode();
-		
+
 		this.cachedHashCode = result;
 	}
 	

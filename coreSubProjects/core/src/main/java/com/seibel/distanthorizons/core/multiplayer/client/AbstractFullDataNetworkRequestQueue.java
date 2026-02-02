@@ -259,12 +259,11 @@ public abstract class AbstractFullDataNetworkRequestQueue implements IDebugRende
 				if (response.payload != null)
 				{
 					FullDataSourceV2DTO dataSourceDto = this.networkState.fullDataPayloadReceiver.decodeDataSource(response.payload);
-					
+
 					// set application flags based on the received detail level,
 					// this is needed so the data sources propagate correctly
-					dataSourceDto.applyToChildren = DhSectionPos.getDetailLevel(dataSourceDto.pos) > DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL;
 					dataSourceDto.applyToParent = DhSectionPos.getDetailLevel(dataSourceDto.pos) < DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL + 12;
-					
+
 					AbstractExecutorService executor = ThreadPoolUtil.getNetworkCompressionExecutor();
 					if (executor == null)
 					{
