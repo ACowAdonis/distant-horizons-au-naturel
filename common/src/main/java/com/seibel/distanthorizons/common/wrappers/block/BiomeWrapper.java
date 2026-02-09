@@ -36,6 +36,7 @@ import com.seibel.distanthorizons.core.wrapperInterfaces.world.IBiomeWrapper;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 
 import net.minecraft.world.level.biome.Biome;
@@ -172,37 +173,48 @@ public class BiomeWrapper implements IBiomeWrapper
 		{
 			return EMPTY_BIOME_STRING;
 		}
-		
-		
-		
-		// we can't generate a serial string if the level is null
+
+
+		// Try to get the resource location from the holder's embedded key first.
+		// This is more reliable than registry lookup because it doesn't depend on
+		// registry object identity (which can differ between BCLib and DH registries).
+		Optional<ResourceKey<Biome>> holderKey = this.biome.unwrapKey();
+		if (holderKey.isPresent())
+		{
+			ResourceLocation resourceLocation = holderKey.get().location();
+			this.serialString = resourceLocation.getNamespace() + ":" + resourceLocation.getPath();
+			return this.serialString;
+		}
+
+
+		// Fallback: we can't generate a serial string if the level is null
 		if (levelWrapper == null)
 		{
 			if (!emptyLevelSerializeFailLogged)
 			{
 				emptyLevelSerializeFailLogged = true;
-				LOGGER.warn("Unable to serialize biome: [" + this.biome + "] because the passed in level wrapper is null. Future errors of this type won't be logged.");
+				LOGGER.warn("Unable to serialize biome: [" + this.biome + "] because the passed in level wrapper is null and holder has no key. Future errors of this type won't be logged.");
 			}
-			
+
 			return EMPTY_BIOME_STRING;
 		}
-		
-		
-		
-		// generate the serial string //
-		
+
+
+
+		// Fallback: generate the serial string via registry lookup //
+
 		Level level = (Level)levelWrapper.getWrappedMcObject();
 		net.minecraft.core.RegistryAccess registryAccess = level.registryAccess();
-		
+
 		ResourceLocation resourceLocation;
-		
+
 		resourceLocation = registryAccess.registryOrThrow(Registries.BIOME).getKey(this.biome.value());
-		
+
 		if (resourceLocation == null)
 		{
 			String biomeName;
 			biomeName = this.biome.value().toString();
-			
+
 			LOGGER.warn("unable to serialize: " + biomeName);
 			// shouldn't normally happen, but just in case
 			this.serialString = "";
@@ -211,7 +223,7 @@ public class BiomeWrapper implements IBiomeWrapper
 		{
 			this.serialString = resourceLocation.getNamespace() + ":" + resourceLocation.getPath();
 		}
-		
+
 		return this.serialString;
 	}
 	

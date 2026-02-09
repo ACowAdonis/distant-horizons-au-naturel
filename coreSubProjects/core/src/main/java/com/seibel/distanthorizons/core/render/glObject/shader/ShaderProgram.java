@@ -185,6 +185,11 @@ public class ShaderProgram
 	public void setUniform(int location, Vec3f value) { GL32.glUniform3f(location, value.x, value.y, value.z); }
 	/** @see ShaderProgram#setUniform(int, Vec3f) */
 	public void trySetUniform(int location, Vec3f value) { if (location != -1) { this.setUniform(location, value); } }
+
+	/** Requires a bound ShaderProgram. Sets a vec3 uniform directly from float components. */
+	public void setUniform(int location, float x, float y, float z) { GL32.glUniform3f(location, x, y, z); }
+	/** @see ShaderProgram#setUniform(int, float, float, float) */
+	public void trySetUniform(int location, float x, float y, float z) { if (location != -1) { this.setUniform(location, x, y, z); } }
 	
 	/** Requires a bound ShaderProgram. */
 	public void setUniform(int location, DhApiVec3i value) { GL32.glUniform3i(location, value.x, value.y, value.z); }

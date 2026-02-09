@@ -111,6 +111,9 @@ public class LodRenderer
 	// Cached array to avoid per-frame allocation in setGLState
 	private final float[] clearColorValues = new float[4];
 
+	// Cached Vec3f to avoid per-container allocation in setShaderProgramMvmOffset
+	private final Vec3f cachedModelOffsetPos = new Vec3f();
+
 
 
 	//=============//
@@ -666,11 +669,14 @@ public class LodRenderer
 		SortedArraySet<LodBufferContainer> lodBufferContainer = lodBufferHandler.getColumnRenderBuffers();
 		if (lodBufferContainer != null)
 		{
+			// Check for API listeners once before the loop to avoid repeated checks
+			boolean hasBufferRenderListeners = ApiEventInjector.INSTANCE.hasListeners(DhApiBeforeBufferRenderEvent.class);
+
 			for (int lodIndex = 0; lodIndex < lodBufferContainer.size(); lodIndex++)
 			{
 				LodBufferContainer bufferContainer = lodBufferContainer.get(lodIndex);
-				this.setShaderProgramMvmOffset(bufferContainer.minCornerBlockPos, shaderProgram, renderEventParam);
-				
+				this.setShaderProgramMvmOffset(bufferContainer.minCornerBlockPos, shaderProgram, renderEventParam, hasBufferRenderListeners);
+
 				GLVertexBuffer[] vbos = opaquePass ? bufferContainer.vbos : bufferContainer.vbosTransparent;
 				for (int vboIndex = 0; vboIndex < vbos.length; vboIndex++)
 				{
@@ -679,12 +685,12 @@ public class LodRenderer
 					{
 						continue;
 					}
-					
+
 					if (vbo.getVertexCount() == 0)
 					{
 						continue;
 					}
-					
+
 					vbo.bind();
 					shaderProgram.bindVertexBuffer(vbo.getId());
 					GL32.glDrawElements(
@@ -715,18 +721,24 @@ public class LodRenderer
 	 * the MVM offset is needed so LODs can be rendered anywhere in the MC world
 	 * without running into floating point percision loss.
 	 */
-	private void setShaderProgramMvmOffset(DhBlockPos pos, IDhApiShaderProgram shaderProgram, RenderParams renderEventParam) throws IllegalStateException
+	private void setShaderProgramMvmOffset(DhBlockPos pos, IDhApiShaderProgram shaderProgram, RenderParams renderEventParam, boolean hasBufferRenderListeners) throws IllegalStateException
 	{
 		Vec3d camPos = renderEventParam.exactCameraPosition;
-		Vec3f modelPos = new Vec3f(
-				(float) (pos.getX() - camPos.x),
-				(float) (pos.getY() - camPos.y),
-				(float) (pos.getZ() - camPos.z));
-		
+		// Reuse cached Vec3f to avoid per-container allocation
+		this.cachedModelOffsetPos.x = (float) (pos.getX() - camPos.x);
+		this.cachedModelOffsetPos.y = (float) (pos.getY() - camPos.y);
+		this.cachedModelOffsetPos.z = (float) (pos.getZ() - camPos.z);
+
+		// Bind must happen here to ensure correct shader is bound before setting uniforms
+		// (shader overrides like Iris/Oculus may bind different programs during VAO/VBO operations)
 		shaderProgram.bind();
-		shaderProgram.setModelOffsetPos(modelPos);
-		
-		ApiEventInjector.INSTANCE.fireAllEvents(DhApiBeforeBufferRenderEvent.class, new DhApiBeforeBufferRenderEvent.EventParam(renderEventParam, modelPos));
+		shaderProgram.setModelOffsetPos(this.cachedModelOffsetPos);
+
+		// Only fire events if there are listeners
+		if (hasBufferRenderListeners)
+		{
+			ApiEventInjector.INSTANCE.fireAllEvents(DhApiBeforeBufferRenderEvent.class, new DhApiBeforeBufferRenderEvent.EventParam(renderEventParam, this.cachedModelOffsetPos));
+		}
 	}
 	
 	

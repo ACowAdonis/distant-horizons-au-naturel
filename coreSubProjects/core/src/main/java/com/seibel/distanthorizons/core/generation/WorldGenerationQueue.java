@@ -67,26 +67,52 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 {
 	private static final DhLogger LOGGER = new DhLoggerBuilder().build();
 	private static final IWrapperFactory WRAPPER_FACTORY = SingletonInjector.INSTANCE.get(IWrapperFactory.class);
-	
-	
+
+	/**
+	 * Distance bucket boundaries in sections (Chebyshev distance).
+	 * Bucket 0: [0, 8), Bucket 1: [8, 16), Bucket 2: [16, 32),
+	 * Bucket 3: [32, 64), Bucket 4: [64, 128), Bucket 5: [128, infinity)
+	 */
+	private static final int[] BUCKET_BOUNDARIES = {8, 16, 32, 64, 128};
+	private static final int BUCKET_COUNT = BUCKET_BOUNDARIES.length + 1;
+	/** Rebucket all tasks when player moves more than this many sections */
+	private static final int REBUCKET_MOVEMENT_THRESHOLD = 16;
+	/**
+	 * Maximum number of waiting tasks before distance-aware eviction kicks in.
+	 * When queue size exceeds this, new tasks will evict further tasks.
+	 */
+	private static final int MAX_WAITING_TASKS_BEFORE_EVICTION = 500;
+
+
 	private final IDhApiWorldGenerator generator;
 	private final IDhServerLevel level;
-	
+
 	/** contains the positions that need to be generated */
 	private final ConcurrentHashMap<Long, WorldGenTask> waitingTasks = new ConcurrentHashMap<>();
-	
+
+	/**
+	 * Distance-based buckets for prioritized task selection.
+	 * Each bucket contains task positions within a distance range.
+	 * Lower bucket indices = closer to player = higher priority.
+	 */
+	@SuppressWarnings("unchecked")
+	private final ConcurrentHashMap<Long, WorldGenTask>[] distanceBuckets = new ConcurrentHashMap[BUCKET_COUNT];
+
+	/** Last position used for bucketing, to detect when rebucketing is needed */
+	private volatile Pos2D lastBucketTargetPos = null;
+
 	private final ConcurrentHashMap<Long, InProgressWorldGenTaskGroup> inProgressGenTasksByLodPos = new ConcurrentHashMap<>();
-	
+
 	/** largest numerical detail level allowed */
 	public final byte lowestDataDetail;
 	/** smallest numerical detail level allowed */
 	public final byte highestDataDetail;
-	
-	
+
+
 	/** If not null this generator is in the process of shutting down */
 	private volatile CompletableFuture<Void> generatorClosingFuture = null;
-	
-	// TODO this logic isn't great and can cause a limit to how many threads could be used for world generation, 
+
+	// TODO this logic isn't great and can cause a limit to how many threads could be used for world generation,
 	//  however it won't cause duplicate requests or concurrency issues, so it will be good enough for now.
 	//  A good long term fix may be to either:
 	//  1. allow the generator to deal with larger sections (let the generator threads split up larger tasks into smaller ones
@@ -116,13 +142,194 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 		this.level = level;
 		this.lowestDataDetail = generator.getLargestDataDetailLevel();
 		this.highestDataDetail = generator.getSmallestDataDetailLevel();
-		
+
+		// Initialize distance buckets
+		for (int i = 0; i < BUCKET_COUNT; i++)
+		{
+			this.distanceBuckets[i] = new ConcurrentHashMap<>();
+		}
+
 		DebugRenderer.register(this, Config.Client.Advanced.Debugging.DebugWireframe.showWorldGenQueue);
 		LOGGER.info("Created world gen queue");
 	}
-	
-	
-	
+
+
+
+	//=================//
+	// bucket helpers  //
+	//=================//
+
+	/**
+	 * Calculates which bucket a task should be in based on Chebyshev distance.
+	 * @param taskPos the section position of the task
+	 * @param targetPos the current player position
+	 * @return bucket index (0 = closest, BUCKET_COUNT-1 = furthest)
+	 */
+	private int calculateBucketIndex(long taskPos, Pos2D targetPos)
+	{
+		Pos2D sectionPos = DhSectionPos.getSectionBBoxPos(taskPos).getCenterBlockPos().toPos2D();
+		int dist = sectionPos.chebyshevDist(targetPos);
+
+		// Convert block distance to section distance (divide by 16)
+		int sectionDist = dist >> 4;
+
+		for (int i = 0; i < BUCKET_BOUNDARIES.length; i++)
+		{
+			if (sectionDist < BUCKET_BOUNDARIES[i])
+			{
+				return i;
+			}
+		}
+		return BUCKET_COUNT - 1;
+	}
+
+	/**
+	 * Adds a task to its appropriate distance bucket.
+	 * @param task the task to add
+	 * @param targetPos the current player position for distance calculation
+	 */
+	private void addTaskToBucket(WorldGenTask task, Pos2D targetPos)
+	{
+		int bucketIndex = this.calculateBucketIndex(task.pos, targetPos);
+		this.distanceBuckets[bucketIndex].put(task.pos, task);
+	}
+
+	/**
+	 * Removes a task from all buckets (since we may not know which bucket it's in).
+	 * @param taskPos the position of the task to remove
+	 */
+	private void removeTaskFromBuckets(long taskPos)
+	{
+		for (int i = 0; i < BUCKET_COUNT; i++)
+		{
+			this.distanceBuckets[i].remove(taskPos);
+		}
+	}
+
+	/**
+	 * Rebuckets all waiting tasks based on the new target position.
+	 * Called when player moves more than REBUCKET_MOVEMENT_THRESHOLD sections.
+	 * @param newTargetPos the new player position
+	 */
+	private void rebucketAllTasks(Pos2D newTargetPos)
+	{
+		// Clear all buckets
+		for (int i = 0; i < BUCKET_COUNT; i++)
+		{
+			this.distanceBuckets[i].clear();
+		}
+
+		// Re-add all waiting tasks to appropriate buckets
+		this.waitingTasks.values().forEach(task -> this.addTaskToBucket(task, newTargetPos));
+
+		this.lastBucketTargetPos = newTargetPos;
+	}
+
+	/**
+	 * Checks if rebucketing is needed based on player movement.
+	 * @param currentTargetPos the current player position
+	 * @return true if rebucketing is needed
+	 */
+	private boolean needsRebucketing(Pos2D currentTargetPos)
+	{
+		Pos2D lastPos = this.lastBucketTargetPos;
+		if (lastPos == null)
+		{
+			return true;
+		}
+
+		// Check if player has moved more than threshold (in blocks, convert to sections)
+		int movementDist = lastPos.chebyshevDist(currentTargetPos);
+		int sectionMovement = movementDist >> 4;
+		return sectionMovement >= REBUCKET_MOVEMENT_THRESHOLD;
+	}
+
+	/**
+	 * Attempts to evict a task from a bucket further than the given bucket index.
+	 * Used to make room for closer tasks when the queue is at capacity.
+	 * @param closerThanBucket only evict from buckets with higher index than this
+	 * @return true if a task was evicted, false if no suitable task was found
+	 */
+	private boolean tryEvictFromFurtherBucket(int closerThanBucket)
+	{
+		// Iterate from furthest bucket to closest (but still further than the new task)
+		for (int i = BUCKET_COUNT - 1; i > closerThanBucket; i--)
+		{
+			ConcurrentHashMap<Long, WorldGenTask> bucket = this.distanceBuckets[i];
+			if (!bucket.isEmpty())
+			{
+				// Pick any task from this bucket to evict
+				Iterator<Map.Entry<Long, WorldGenTask>> iterator = bucket.entrySet().iterator();
+				if (iterator.hasNext())
+				{
+					Map.Entry<Long, WorldGenTask> entry = iterator.next();
+					long posToEvict = entry.getKey();
+					WorldGenTask evictedTask = entry.getValue();
+
+					// Remove from both bucket and main map
+					bucket.remove(posToEvict, evictedTask);
+					WorldGenTask removed = this.waitingTasks.remove(posToEvict);
+					if (removed != null)
+					{
+						// Cancel the evicted task's future
+						removed.future.complete(WorldGenResult.CreateFail());
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Selects the best task from a bucket using view frustum priority.
+	 * Tasks in front of the player are prioritized over tasks behind.
+	 * @param bucket the bucket to select from
+	 * @param targetPos the current player position
+	 * @param lookDir the player's look direction (may be null)
+	 * @return the best task, or null if the bucket is empty
+	 */
+	private WorldGenTask selectBestTaskFromBucket(
+			ConcurrentHashMap<Long, WorldGenTask> bucket,
+			Pos2D targetPos,
+			Vec3f lookDir)
+	{
+		// Use reduceEntries within the bucket (which is much smaller than the full queue)
+		TaskDistancePair bestPair = bucket.reduceEntries(64,
+				entry -> {
+					Pos2D taskPos = DhSectionPos.getSectionBBoxPos(entry.getValue().pos).getCenterBlockPos().toPos2D();
+					int baseDist = taskPos.chebyshevDist(targetPos);
+
+					// Apply view frustum priority if look direction is available
+					if (lookDir != null && baseDist > 0)
+					{
+						float dx = taskPos.getX() - targetPos.getX();
+						float dz = taskPos.getY() - targetPos.getY();
+						float distSquared = dx * dx + dz * dz;
+						if (distSquared > 0)
+						{
+							float invLen = (float) (1.0 / Math.sqrt(distSquared));
+							dx *= invLen;
+							dz *= invLen;
+
+							// Dot product with look direction
+							float dot = dx * lookDir.x + dz * lookDir.z;
+
+							// Map dot product [-1, 1] to distance multiplier [1.5, 1.0]
+							float multiplier = 1.0f + 0.25f * (1.0f - dot);
+							return new TaskDistancePair(entry.getValue(), (int)(baseDist * multiplier));
+						}
+					}
+
+					return new TaskDistancePair(entry.getValue(), baseDist);
+				},
+				(a, b) -> (a.dist < b.dist) ? a : b);
+
+		return bestPair != null ? bestPair.task : null;
+	}
+
+
+
 	//=================//
 	// world generator //
 	// task handling   //
@@ -136,8 +343,8 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 		{
 			return CompletableFuture.completedFuture(WorldGenResult.CreateFail());
 		}
-		
-		
+
+
 		// make sure the generator can provide the requested position
 		if (requiredDataDetail < this.highestDataDetail)
 		{
@@ -147,24 +354,46 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 		{
 			requiredDataDetail = this.lowestDataDetail;
 		}
-		
+
 		// Assert that the data at least can fill in 1 single ChunkSizedFullDataAccessor
 		LodUtil.assertTrue(DhSectionPos.getDetailLevel(pos) > requiredDataDetail + LodUtil.CHUNK_DETAIL_LEVEL);
-		
-		
+
+
 		CompletableFuture<WorldGenResult> future = new CompletableFuture<>();
-		this.waitingTasks.put(pos, new WorldGenTask(pos, requiredDataDetail, tracker, future));
+		WorldGenTask task = new WorldGenTask(pos, requiredDataDetail, tracker, future);
+
+		// Add to distance bucket for priority-based selection
+		Pos2D targetPos = this.generationTargetPos.toPos2D();
+		int newTaskBucket = this.calculateBucketIndex(pos, targetPos);
+
+		// Distance-aware eviction: if queue is at capacity, evict a further task
+		if (this.waitingTasks.size() >= MAX_WAITING_TASKS_BEFORE_EVICTION)
+		{
+			// Only add this task if we can evict a further one, or if this is the furthest bucket
+			if (newTaskBucket < BUCKET_COUNT - 1)
+			{
+				// Try to evict from a bucket further than ours
+				this.tryEvictFromFurtherBucket(newTaskBucket);
+			}
+			// If eviction failed and we're in the furthest bucket, the task still gets added
+			// (we don't reject tasks, we just try to maintain priority)
+		}
+
+		this.waitingTasks.put(pos, task);
+		this.addTaskToBucket(task, targetPos);
+
 		return future;
 	}
 	
 	@Override
 	public void removeRetrievalRequestIf(DhSectionPos.ICancelablePrimitiveLongConsumer removeIf)
 	{
-		this.waitingTasks.forEachKey(100, (genPos) -> 
+		this.waitingTasks.forEachKey(100, (genPos) ->
 		{
 			if (removeIf.accept(genPos))
 			{
 				this.waitingTasks.remove(genPos);
+				this.removeTaskFromBuckets(genPos);
 			}
 		});
 	}
@@ -255,57 +484,45 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 		{
 			return false;
 		}
-		
-		
-		
-		// Capture look direction for use in lambda (volatile read once)
-		Vec3f currentLookDir = this.lookDirection;
+
 		Pos2D targetPos2D = targetPos.toPos2D();
 
-		TaskDistancePair closestTaskPair = this.waitingTasks.reduceEntries(1024,
-				entry -> {
-					Pos2D taskPos = DhSectionPos.getSectionBBoxPos(entry.getValue().pos).getCenterBlockPos().toPos2D();
-					int baseDist = taskPos.chebyshevDist(targetPos2D);
-
-					// Apply view frustum priority if look direction is available
-					if (currentLookDir != null && baseDist > 0)
-					{
-						// Calculate direction from player to task (2D, ignoring Y)
-						// Note: Pos2D uses x,y but represents x,z in world coordinates
-						float dx = taskPos.getX() - targetPos2D.getX();
-						float dz = taskPos.getY() - targetPos2D.getY();
-						float distSquared = dx * dx + dz * dz;
-						if (distSquared > 0)
-						{
-							float invLen = (float) (1.0 / Math.sqrt(distSquared));
-							dx *= invLen;
-							dz *= invLen;
-
-							// Dot product with look direction (2D, using x and z components)
-							float dot = dx * currentLookDir.x + dz * currentLookDir.z;
-
-							// Map dot product [-1, 1] to distance multiplier [1.5, 1.0]
-							// In front (dot=1): multiplier = 1.0 (no penalty)
-							// Behind (dot=-1): multiplier = 1.5 (50% penalty)
-							float multiplier = 1.0f + 0.25f * (1.0f - dot);
-							return new TaskDistancePair(entry.getValue(), (int)(baseDist * multiplier));
-						}
-					}
-
-					return new TaskDistancePair(entry.getValue(), baseDist);
-				},
-				(TaskDistancePair aTaskPair, TaskDistancePair bTaskPair) -> (aTaskPair.dist < bTaskPair.dist) ? aTaskPair : bTaskPair);
-		
-		if (closestTaskPair == null)
+		// Check if we need to rebucket tasks due to player movement
+		if (this.needsRebucketing(targetPos2D))
 		{
-			// FIXME concurrency issue
+			this.rebucketAllTasks(targetPos2D);
+		}
+
+		// Find the first non-empty bucket (closest to player)
+		ConcurrentHashMap<Long, WorldGenTask> selectedBucket = null;
+		for (int i = 0; i < BUCKET_COUNT; i++)
+		{
+			if (!this.distanceBuckets[i].isEmpty())
+			{
+				selectedBucket = this.distanceBuckets[i];
+				break;
+			}
+		}
+
+		if (selectedBucket == null)
+		{
+			// No tasks in any bucket - this can happen due to concurrency
 			return false;
 		}
-		
-		WorldGenTask closestTask = closestTaskPair.task;
-		
+
+		// Select the best task from this bucket using view frustum priority
+		Vec3f currentLookDir = this.lookDirection;
+		WorldGenTask closestTask = this.selectBestTaskFromBucket(selectedBucket, targetPos2D, currentLookDir);
+
+		if (closestTask == null)
+		{
+			// Bucket became empty due to concurrency
+			return false;
+		}
+
 		// remove the task we found, we are going to start it and don't want to run it multiple times
 		this.waitingTasks.remove(closestTask.pos, closestTask);
+		this.removeTaskFromBuckets(closestTask.pos);
 		
 		// do we need to modify this task to generate it?
 		if (this.canGenerateDetailLevel(DhSectionPos.getDetailLevel(closestTask.pos)))
@@ -344,13 +561,15 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 			LinkedList<CompletableFuture<WorldGenResult>> childFutures = new LinkedList<>();
 			long sectionPos = closestTask.pos;
 			WorldGenTask finalClosestTask = closestTask;
+			Pos2D finalTargetPos2D = targetPos2D;
 			DhSectionPos.forEachChild(sectionPos, (childDhSectionPos) ->
 			{
 				CompletableFuture<WorldGenResult> newFuture = new CompletableFuture<>();
 				childFutures.add(newFuture);
-				
+
 				WorldGenTask newGenTask = new WorldGenTask(childDhSectionPos, DhSectionPos.getDetailLevel(childDhSectionPos), finalClosestTask.taskTracker, newFuture);
 				this.waitingTasks.put(newGenTask.pos, newGenTask);
+				this.addTaskToBucket(newGenTask, finalTargetPos2D);
 			});
 			
 			// send the child futures to the future recipient, to notify them of the new tasks

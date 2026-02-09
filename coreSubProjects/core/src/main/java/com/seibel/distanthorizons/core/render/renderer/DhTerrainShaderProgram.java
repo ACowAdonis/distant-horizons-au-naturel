@@ -211,7 +211,7 @@ public class DhTerrainShaderProgram extends ShaderProgram implements IDhApiShade
 	}
 	
 	@Override
-	public void setModelOffsetPos(DhApiVec3f modelOffsetPos) { this.setUniform(this.uModelOffset, new Vec3f(modelOffsetPos)); }
+	public void setModelOffsetPos(DhApiVec3f modelOffsetPos) { this.setUniform(this.uModelOffset, modelOffsetPos.x, modelOffsetPos.y, modelOffsetPos.z); }
 	
 	@Override
 	public int getId() { return this.id; }
