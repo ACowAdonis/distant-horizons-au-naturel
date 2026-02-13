@@ -31,6 +31,9 @@ import com.seibel.distanthorizons.core.wrapperInterfaces.world.IBiomeWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.ILevelWrapper;
 import com.seibel.distanthorizons.core.logging.DhLogger;
 
+import com.seibel.distanthorizons.core.util.FullDataPointUtil;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -211,6 +214,105 @@ public class FullDataPointIdMap
 	
 	
 	
+	//============//
+	// compaction //
+	//============//
+
+	/**
+	 * Removes unused mapping entries and remaps all data point IDs to be contiguous.
+	 * This prevents unbounded growth of the mapping when child LODs are repeatedly
+	 * merged into parent LODs, as each merge can introduce entries that later become
+	 * unreferenced when data points are overwritten.
+	 *
+	 * @param dataPoints the data point columns that reference IDs in this mapping
+	 * @return true if compaction was performed (mapping had unused entries)
+	 */
+	public boolean compact(LongArrayList[] dataPoints)
+	{
+		// Collect all IDs referenced by data points
+		BitSet referencedIds = new BitSet(this.blockBiomePairList.size());
+		for (int i = 0; i < dataPoints.length; i++)
+		{
+			LongArrayList column = dataPoints[i];
+			if (column == null)
+			{
+				continue;
+			}
+			for (int j = 0; j < column.size(); j++)
+			{
+				long dataPoint = column.getLong(j);
+				if (dataPoint == FullDataPointUtil.EMPTY_DATA_POINT)
+				{
+					continue;
+				}
+				int id = FullDataPointUtil.getId(dataPoint);
+				referencedIds.set(id);
+			}
+		}
+
+		int referencedCount = referencedIds.cardinality();
+		if (referencedCount == this.blockBiomePairList.size())
+		{
+			// All entries are in use, no compaction needed
+			return false;
+		}
+
+		// Build old-to-new ID remap array and new compact pair list
+		int oldSize = this.blockBiomePairList.size();
+		int[] oldToNewId = new int[oldSize];
+		Arrays.fill(oldToNewId, -1);
+		ArrayList<BlockBiomeWrapperPair> newPairList = new ArrayList<>(referencedCount);
+
+		int newId = 0;
+		for (int oldId = referencedIds.nextSetBit(0); oldId >= 0; oldId = referencedIds.nextSetBit(oldId + 1))
+		{
+			oldToNewId[oldId] = newId;
+			newPairList.add(this.blockBiomePairList.get(oldId));
+			newId++;
+		}
+
+		// Remap all data point IDs
+		for (int i = 0; i < dataPoints.length; i++)
+		{
+			LongArrayList column = dataPoints[i];
+			if (column == null)
+			{
+				continue;
+			}
+			for (int j = 0; j < column.size(); j++)
+			{
+				long dataPoint = column.getLong(j);
+				if (dataPoint == FullDataPointUtil.EMPTY_DATA_POINT)
+				{
+					continue;
+				}
+				int currentId = FullDataPointUtil.getId(dataPoint);
+				int mappedId = oldToNewId[currentId];
+				if (mappedId != currentId)
+				{
+					column.set(j, (dataPoint & FullDataPointUtil.INVERSE_ID_MASK) | mappedId);
+				}
+			}
+		}
+
+		// Replace mapping contents
+		this.blockBiomePairList.clear();
+		this.blockBiomePairList.addAll(newPairList);
+		this.idMap.clear();
+		for (int i = 0; i < this.blockBiomePairList.size(); i++)
+		{
+			this.idMap.put(this.blockBiomePairList.get(i), i);
+		}
+
+		// Regenerate hash
+		this.generateHashCode();
+		this.useIncrementalHash = true;
+
+		return true;
+	}
+
+
+
 	//=============//
 	// serializing //
 	//=============//

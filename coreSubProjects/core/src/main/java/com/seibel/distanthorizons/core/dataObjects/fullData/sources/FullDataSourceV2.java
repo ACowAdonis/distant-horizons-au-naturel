@@ -360,8 +360,11 @@ public class FullDataSourceV2
 					}
 				}
 			}
-			
-			
+
+			// Remove unreferenced mapping entries to prevent unbounded growth
+			// after merging child LODs into parent LODs
+			this.mapping.compact(this.dataPoints);
+
 			// update the hash code
 			this.generateHashCode();
 		}
